@@ -8,57 +8,74 @@ namespace MobileAutomation.Tests.Tests;
 
 
 [TestFixture]
+[Parallelizable(ParallelScope.All)]
 public class LoginTests : BaseTest
 {
 
+    // [Test]
+    // [Ignore("Temporarily disabled while debugging Appium")]
+    // public void VerifySessionStarts()
+    // {
+    //     Console.WriteLine("Session started");
+    //     //Console.WriteLine(DriverFactory.Driver.CurrentPackage);
+    //     Assert.Pass();
+    // }
+
+    // [Test]
+    // [Ignore("Temporarily disabled while debugging Appium")]
+    // public void DumpCurrentScreen()
+    // {
+        
+    //     PermissionHelper.HandleNotifications(DriverFactory.AndroidDriver);
+    //     Thread.Sleep(3000);
+        
+    //     File.WriteAllText(
+    //         @"C:\temp\RecoveryTrac.xml",
+    //         DriverFactory.Driver.PageSource);
+
+    //     var screenshot =
+    //         DriverFactory.Driver.GetScreenshot();
+
+    //     screenshot.SaveAsFile(@"C:\temp\RecoveryTrac.png");
+
+    //     Console.WriteLine("Contexts:");
+
+    //     var contexts =
+    //         DriverFactory.Driver.Contexts;
+
+    //     foreach (var context in contexts)
+    //     {
+    //         Console.WriteLine($"- {context}");
+    //     }
+    //     Assert.Pass();
+    // }
+
     [Test]
-    [Ignore("Temporarily disabled while debugging Appium")]
-    public void VerifySessionStarts()
+    [Parallelizable(ParallelScope.Self)]
+    public void LoginTraxAndroid8()
     {
-        Console.WriteLine("Session started");
-        //Console.WriteLine(DriverFactory.Driver.CurrentPackage);
-        Assert.Pass();
+        ExecuteLogin("Android8");
     }
 
     [Test]
-    [Ignore("Temporarily disabled while debugging Appium")]
-    public void DumpCurrentScreen()
+    [Parallelizable(ParallelScope.Self)]
+    public void LoginTraxAndroid12()
     {
-        
-        PermissionHelper.HandleNotifications(DriverFactory.AndroidDriver);
-        Thread.Sleep(3000);
-        
-        File.WriteAllText(
-            @"C:\temp\RecoveryTrac.xml",
-            DriverFactory.Driver.PageSource);
-
-        var screenshot =
-            DriverFactory.Driver.GetScreenshot();
-
-        screenshot.SaveAsFile(@"C:\temp\RecoveryTrac.png");
-
-        Console.WriteLine("Contexts:");
-
-        var contexts =
-            DriverFactory.Driver.Contexts;
-
-        foreach (var context in contexts)
-        {
-            Console.WriteLine($"- {context}");
-        }
-        Assert.Pass();
+        ExecuteLogin("Android12");
     }
 
     [Test]
-    //[Ignore("Temporarily disabled while debugging Appium")]
-    [TestCase("Android8")]
-    [TestCase("Android12")]
-    [TestCase("Android14")]
-    //[TestCase("Android16")]
-    public void LoginTrax(string environment)
+   [Parallelizable(ParallelScope.Self)]
+    public void LoginTraxAndroid14()
+    {
+        ExecuteLogin("Android14");
+    }
+
+    private void ExecuteLogin(string environment)
     {
         var start = DateTime.Now;
-
+        Console.WriteLine(
+            $"START {environment} - {start:HH:mm:ss.fff}");
         try
         {
             DriverFactory.Initialize(environment);
@@ -99,6 +116,11 @@ public class LoginTests : BaseTest
                 .GetScreenshot()
                 .SaveAsFile(screenshotFile);
 
+            var end = DateTime.Now;
+
+            Console.WriteLine(
+                $"END {environment} - {end:HH:mm:ss.fff}");
+
             HtmlReportGenerator.AddResult(
                 new ReportResult
                 {
@@ -106,15 +128,20 @@ public class LoginTests : BaseTest
                     PlatformVersion = DriverFactory.CurrentPlatformVersion,
                     DeviceName = DriverFactory.CurrentDeviceName,
                     Result = "PASS",
-                    DurationSeconds = (DateTime.Now - start).TotalSeconds,
-                    ScreenshotPath = $"Screenshots/{environment}.png"
+                    DurationSeconds = (end - start).TotalSeconds,
+                    ScreenshotPath = $"Screenshots/{environment}.png",
+                    StartTime = start.ToString("HH:mm:ss.fff"),
+                    EndTime = end.ToString("HH:mm:ss.fff")
                 }
             );
 
             Console.WriteLine("Login successful");
+            Console.WriteLine(
+                $"END {environment} - {DateTime.Now:HH:mm:ss.fff}");
         }
             catch (Exception ex)
             {
+                var end = DateTime.Now;
                 var screenshotsFolder =
                     Path.Combine(
                         Directory.GetCurrentDirectory(),
@@ -150,109 +177,109 @@ public class LoginTests : BaseTest
                         Result = "FAIL",
                         ErrorMessage = ex.Message,
                         DurationSeconds =
-                            (DateTime.Now - start).TotalSeconds,
+                            (end - start).TotalSeconds,
                         ScreenshotPath =
-                            $"Screenshots/{environment}_FAIL.png"
+                            $"Screenshots/{environment}_FAIL.png",
+                        StartTime = start.ToString("HH:mm:ss.fff"),
+                        EndTime = end.ToString("HH:mm:ss.fff")
                     });
 
                 throw;
             }
         finally
         {
-            DriverFactory.Driver.Quit();
+            DriverFactory.Quit();
         }
     }
 
-    [Test]
-    [Ignore("Temporarily disabled while debugging Appium")]
-    public void VerifyWebViewAccess()
-    {
-        Thread.Sleep(5000);
-        Console.WriteLine("1");
-        ContextHelper.SwitchToWebView(
-            DriverFactory.AndroidDriver);
-        Console.WriteLine("2");
-        // Console.WriteLine(
-        //     DriverFactory.Driver.PageSource);
+    // [Test]
+    // [Ignore("Temporarily disabled while debugging Appium")]
+    // public void VerifyWebViewAccess()
+    // {
+    //     Thread.Sleep(5000);
+    //     Console.WriteLine("1");
+    //     ContextHelper.SwitchToWebView(
+    //         DriverFactory.AndroidDriver);
+    //     Console.WriteLine("2");
+    //     // Console.WriteLine(
+    //     //     DriverFactory.Driver.PageSource);
         
-        Assert.Pass();
-    }
+    //     Assert.Pass();
+    // }
 
-    [Test]
-    [Ignore("Temporarily disabled while debugging Appium")]
-    public void UserCanLogin()
-    {
-        Thread.Sleep(5000);
-        // Switch to WebView if your app is hybrid
-        //ContextHelper.SwitchToWebView(DriverFactory.Driver);
+    // [Test]
+    // [Ignore("Temporarily disabled while debugging Appium")]
+    // public void UserCanLogin()
+    // {
+    //     Thread.Sleep(5000);
+    //     // Switch to WebView if your app is hybrid
+    //     //ContextHelper.SwitchToWebView(DriverFactory.Driver);
 
-        Console.WriteLine("Current Contexts:");
-        foreach (var context in DriverFactory.Driver.Contexts)
-        {
-            Console.WriteLine(context);
-        }
+    //     Console.WriteLine("Current Contexts:");
+    //     foreach (var context in DriverFactory.Driver.Contexts)
+    //     {
+    //         Console.WriteLine(context);
+    //     }
 
-        DriverFactory.Driver.ExecuteScript(
-            "mobile: clickGesture",
-            new Dictionary<string, object>
-            {
-                ["x"] = 500,
-                ["y"] = 985
-            });
+    //     DriverFactory.Driver.ExecuteScript(
+    //         "mobile: clickGesture",
+    //         new Dictionary<string, object>
+    //         {
+    //             ["x"] = 500,
+    //             ["y"] = 985
+    //         });
 
-        Thread.Sleep(15000);
-        Console.WriteLine("Current Contexts:");
-        foreach (var context in DriverFactory.Driver.Contexts)
-        {
-            Console.WriteLine(context);
-        }
+    //     Thread.Sleep(15000);
+    //     Console.WriteLine("Current Contexts:");
+    //     foreach (var context in DriverFactory.Driver.Contexts)
+    //     {
+    //         Console.WriteLine(context);
+    //     }
         
-        DriverFactory.Driver.Context = "WEBVIEW_chrome";
+    //     DriverFactory.Driver.Context = "WEBVIEW_chrome";
 
-        var wait = new WebDriverWait(
-            DriverFactory.Driver,
-            TimeSpan.FromSeconds(30));
+    //     var wait = new WebDriverWait(
+    //         DriverFactory.Driver,
+    //         TimeSpan.FromSeconds(30));
         
-        var loginPage = new LoginPage(DriverFactory.AndroidDriver);
+    //     var loginPage = new LoginPage(DriverFactory.AndroidDriver);
         
-        loginPage.Login(
-            "hsa103",
-            "Becu1234");
+    //     loginPage.Login(
+    //         "hsa103",
+    //         "Becu1234");
 
-        // var inputs = DriverFactory.Driver.FindElements(
-        //     OpenQA.Selenium.By.TagName("input"));
+    //     // var inputs = DriverFactory.Driver.FindElements(
+    //     //     OpenQA.Selenium.By.TagName("input"));
 
-        // Console.WriteLine($"Inputs found: {inputs.Count}");
+    //     // Console.WriteLine($"Inputs found: {inputs.Count}");
 
-        // foreach (var input in inputs)
-        // {
-        //     try
-        //     {
-        //         Console.WriteLine(
-        //             $"id={input.GetAttribute("id")} " +
-        //             $"name={input.GetAttribute("name")} " +
-        //             $"type={input.GetAttribute("type")}");
-        //     }
-        //     catch
-        //     {
-        //     }
-        // }
+    //     // foreach (var input in inputs)
+    //     // {
+    //     //     try
+    //     //     {
+    //     //         Console.WriteLine(
+    //     //             $"id={input.GetAttribute("id")} " +
+    //     //             $"name={input.GetAttribute("name")} " +
+    //     //             $"type={input.GetAttribute("type")}");
+    //     //     }
+    //     //     catch
+    //     //     {
+    //     //     }
+    //     // }
 
-        Thread.Sleep(20000);
+    //     Thread.Sleep(20000);
 
-        DriverFactory.Driver.ExecuteScript(
-            "mobile: clickGesture",
-            new Dictionary<string, object>
-            {
-                ["x"] = 592,
-                ["y"] = 2180
-            });
-        Thread.Sleep(5000);
-        Console.WriteLine("Current Contexts: Logged");
-        DriverFactory.Driver.Context = "NATIVE_APP";
+    //     DriverFactory.Driver.ExecuteScript(
+    //         "mobile: clickGesture",
+    //         new Dictionary<string, object>
+    //         {
+    //             ["x"] = 592,
+    //             ["y"] = 2180
+    //         });
+    //     Thread.Sleep(5000);
+    //     Console.WriteLine("Current Contexts: Logged");
+    //     DriverFactory.Driver.Context = "NATIVE_APP";
 
-        Assert.Pass("Login test executed successfully.");
-    }
-
-
+    //     Assert.Pass("Login test executed successfully.");
+    // }
 }

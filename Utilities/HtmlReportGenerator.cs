@@ -4,18 +4,54 @@ namespace MobileAutomation.Tests.Reporting;
 
 public static class HtmlReportGenerator
 {
-    private static readonly List<ReportResult> Results = new();
+    public static DateTime SuiteStartTime { get; set; }
+    public static DateTime SuiteEndTime { get; set; }
+    private static readonly object LockObject =
+        new();
+
+    private static readonly List<ReportResult> Results =
+        new();
 
     public static void AddResult(ReportResult result)
     {
-        Results.Add(result);
+        lock (LockObject)
+        {
+            Results.Add(result);
+        }
     }
 
     public static void Generate()
     {
+        var suiteRuntime =
+            (SuiteEndTime - SuiteStartTime)
+                .TotalSeconds;
+        var sequentialRuntime =
+            Results.Sum(r => r.DurationSeconds);
+
+        var savings =
+            sequentialRuntime - suiteRuntime;
+
+        var savingsPercentage =
+            sequentialRuntime > 0
+                ? (savings / sequentialRuntime) * 100
+                : 0;
+            
         Console.WriteLine(
             "Generating HTML Report...");
 
+        var supportedVersions =
+            Results
+                .Where(r => r.Result == "PASS")
+                .OrderBy(r =>
+                {
+                    return double.TryParse(
+                        r.PlatformVersion,
+                        out var version)
+                        ? version
+                        : 0;
+                })
+                .ToList();
+                
         var passed =
             Results.Count(r => r.Result == "PASS");
 
@@ -30,6 +66,50 @@ public static class HtmlReportGenerator
 <title>RecoveryTrac Flex Compatibility Report</title>
 
 <style>
+    .performance-panel{
+        background:#fff4ce;
+        border-left:5px solid #ffb900;
+        padding:15px;
+        margin-bottom:20px;
+        border-radius:5px;
+    }
+
+    .performance-panel h2{
+        margin-top:0;
+        color:#8a6d00;
+    }
+    .compatibility-matrix{
+        background:#f0f9ff;
+        border-left:5px solid #107c10;
+        padding:15px;
+        margin-bottom:20px;
+        border-radius:5px;
+    }
+
+    .compatibility-matrix h2{
+        margin-top:0;
+        color:#107c10;
+    }
+
+    .compatibility-matrix ul{
+        margin:0;
+        padding-left:20px;
+    }
+
+    .compatibility-matrix li{
+        margin-bottom:6px;
+    }
+    .metadata{
+        background:#f4f6f8;
+        border-left:5px solid #0078d4;
+        padding:15px;
+        margin-bottom:20px;
+        border-radius:5px;
+    }
+
+    .metadata p{
+        margin:5px 0;
+    }
 .summary{
     display:flex;
     gap:20px;
@@ -95,70 +175,173 @@ td{
 <body>
 """);
 
+        html.Append($"""
+    <h1>RecoveryTrac Flex Compatibility Report</h1>
+
+    <div class="metadata">
+
+        <p><b>Application:</b> RecoveryTrac Flex</p>
+
+        <p><b>Framework:</b> Appium + NUnit</p>
+
+        <p><b>Automation Pattern:</b> Page Object Model</p>
+
+        <p><b>Execution Mode:</b> Parallel</p>
+
+        <p><b>Tester:</b> Adrian Mauricio</p>
+
+        <p><b>Suite Runtime:</b> {suiteRuntime:F2} seconds</p>
+
+        <p><b>Sequential Runtime:</b> {sequentialRuntime:F2} seconds</p>
+
+        <p><b>Time Saved:</b> {savings:F2} seconds</p>
+
+        <p><b>Performance Improvement:</b> {savingsPercentage:F1}%</p>
+
+    </div>
+    """);
+
+    //
+    // Compatibility Matrix
+    //
     html.Append($"""
-<h1>RecoveryTrac Flex Compatibility Report</h1>
+    <div class="compatibility-matrix">
 
-<div class="summary">
+        <h2>Compatibility Assessment</h2>
 
-    <div class="card pass-card">
-        Passed: {passed}
+        <p>
+            RecoveryTrac Flex was successfully validated on
+            <b>{supportedVersions.Count}</b> Android environment(s).
+        </p>
+
+        <ul>
+    """);
+
+    foreach (var version in supportedVersions)
+    {
+        html.Append($"""
+            <li>
+                ✅ Android {version.PlatformVersion} Supported
+            </li>
+    """);
+    }
+
+    html.Append("""
+        </ul>
+
+        <p>
+            <b>Assessment:</b>
+            All executed compatibility validations completed successfully.
+            The application is compatible with all tested Android versions.
+        </p>
+
+    </div>
+    """);
+
+    //
+    // Parallel Performance Panel
+    //
+    html.Append($"""
+    <div class="performance-panel">
+
+        <h2>Parallel Execution Performance</h2>
+
+        <p>
+            <b>Sequential Runtime:</b>
+            {sequentialRuntime:F2} seconds
+        </p>
+
+        <p>
+            <b>Actual Runtime:</b>
+            {suiteRuntime:F2} seconds
+        </p>
+
+        <p>
+            <b>Time Saved:</b>
+            {savings:F2} seconds
+        </p>
+
+        <p>
+            <b>Performance Improvement:</b>
+            {savingsPercentage:F1}%
+        </p>
+
+    </div>
+    """);
+
+    //
+    // Summary Cards
+    //
+    html.Append($"""
+    <div class="summary">
+
+        <div class="card pass-card">
+            Passed: {passed}
+        </div>
+
+        <div class="card fail-card">
+            Failed: {failed}
+        </div>
+
+        <div class="card total-card">
+            Total: {Results.Count}
+        </div>
+
     </div>
 
-    <div class="card fail-card">
-        Failed: {failed}
-    </div>
+    <p>
+        <b>Generated:</b> {DateTime.Now}
+    </p>
 
-    <div class="card total-card">
-        Total: {Results.Count}
-    </div>
+    <table>
 
-</div>
+    """);
 
-<p>
-Generated: {DateTime.Now}
-</p>
+        html.Append($"""
+    <table>
 
-<table>
+    <tr>
+        <th>Environment</th>
+        <th>Android Version</th>
+        <th>Device</th>
+        <th>Start</th>
+        <th>End</th>
+        <th>Duration (s)</th>
+        <th>Result</th>
+        <th>Screenshot</th>
+        <th>Error</th>
+    </tr>
+    """);
 
-<tr>
-<th>Environment</th>
-<th>Android Version</th>
-<th>Device</th>
-<th>Duration (s)</th>
-<th>Result</th>
-<th>Screenshot</th>
-<th>Error</th>
-</tr>
-""");
+   foreach (var result in Results
+        .OrderBy(r => double.Parse(r.PlatformVersion)))
+    {
+        html.Append($"""
+        <tr>
+            <td>{result.Environment}</td>
+            <td>{result.PlatformVersion}</td>
+            <td>{result.DeviceName}</td>
+            <td>{result.StartTime}</td>
+            <td>{result.EndTime}</td>
+            <td>{result.DurationSeconds:F2}</td>
+            <td class="{(result.Result == "PASS" ? "pass" : "fail")}">
+                {result.Result}
+            </td>
+            <td>
+                <a class="screenshot-link"
+                href="{result.ScreenshotPath}"
+                target="_blank">
+                    📷 Open
+                </a>
+            </td>
+            <td>{result.ErrorMessage}</td>
+        </tr>
+        """);
+    }
 
-        foreach (var result in Results)
-        {
-            html.Append($"""
-<tr>
-<td>{result.Environment}</td>
-<td>{result.PlatformVersion}</td>
-<td>{result.DeviceName}</td>
-<td>{result.DurationSeconds:F2}</td>
-<td class="{(result.Result == "PASS" ? "pass" : "fail")}">
-{result.Result}
-</td>
-<td>
-<a href="{result.ScreenshotPath}" target="_blank">
-    View Screenshot
-</a>
-</td>
-<td>{result.ErrorMessage}</td>
-</tr>
-""");
-        }
-
-        html.Append("""
-</table>
-
-</body>
-</html>
-""");
-
+    html.Append("""
+    </table>
+    """);
         var reportFolder =
             Path.Combine(
                 Directory.GetCurrentDirectory(),

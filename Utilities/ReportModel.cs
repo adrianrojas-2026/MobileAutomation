@@ -14,4 +14,6 @@ public class ReportResult
 
     public double DurationSeconds { get; set; }
     public string ScreenshotPath { get; set; } = string.Empty;
+    public string StartTime { get; set; } = string.Empty;
+    public string EndTime { get; set; } = string.Empty;
 }
