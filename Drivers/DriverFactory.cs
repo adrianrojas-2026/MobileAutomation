@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Configuration;
-using MobileAutomation.Tests.Utilities;
 using OpenQA.Selenium.Appium;
 using OpenQA.Selenium.Appium.Android;
 using OpenQA.Selenium.Appium.iOS;
@@ -8,12 +7,19 @@ namespace MobileAutomation.Tests.Drivers;
 
 public static class DriverFactory
 {
-    private static ThreadLocal<AppiumDriver> _driver =
-    new();
+    private static ThreadLocal<AppiumDriver> _driver = new();
+    public static AppiumDriver Driver => _driver.Value!;
+    public static AndroidDriver AndroidDriver => (AndroidDriver)Driver;
 
-    public static AppiumDriver Driver =>
-        _driver.Value!;
-    
+        // --- NUEVOS CONTENEDORES EXCLUSIVOS (Para escenarios simultáneos Flex + Driver) ---
+    private static ThreadLocal<AndroidDriver> _driverFlex = new();
+    private static ThreadLocal<AndroidDriver> _driverDriver = new();
+
+    public static AndroidDriver DriverFlex => _driverFlex.Value!;
+    public static AndroidDriver DriverDriver => _driverDriver.Value!;
+
+
+    // --- Shared enviroment variables ---
     private static readonly ThreadLocal<string> _environment = new();
     private static readonly ThreadLocal<string> _platformVersion = new();
     private static readonly ThreadLocal<string> _deviceName = new();
@@ -29,9 +35,6 @@ public static class DriverFactory
 
     public static string CurrentUdid =>
         _udid.Value ?? string.Empty;
-
-    public static AndroidDriver AndroidDriver =>
-        (AndroidDriver)Driver;
 
     public static void Initialize(string environment)
     {
@@ -72,7 +75,7 @@ public static class DriverFactory
 
         options.PlatformVersion = envSection["PlatformVersion"];
 
-       options.DeviceName = envSection["DeviceName"];
+        options.DeviceName = envSection["DeviceName"];
 
         options.AutomationName = appiumSection["AutomationName"];
 
@@ -139,6 +142,54 @@ public static class DriverFactory
                 options);
         }
     }
+    
+    public static void InitializeDualApps(string environmentFlex, string environmentDriver)
+    {
+        IConfiguration config = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("Config/appsettings.json", optional: false, reloadOnChange: false)
+            .Build();
+
+        var appiumSection = config.GetSection("Appium");
+        string serverUrl = appiumSection["ServerUrl"]!;
+
+        // 1. INICIALIZAR RECOVERY TRAC FLEX
+        var envFlexSection = config.GetSection($"MobileConfigurations:{environmentFlex}");
+        var optionsFlex = ConfigurarOpciones(appiumSection, envFlexSection);
+        _driverFlex.Value = new AndroidDriver(new Uri(serverUrl), optionsFlex);
+
+        // 2. INICIALIZAR RECOVERY TRAC DRIVER
+        var envDriverSection = config.GetSection($"MobileConfigurations:{environmentDriver}");
+        var optionsDriver = ConfigurarOpciones(appiumSection, envDriverSection);
+        _driverDriver.Value = new AndroidDriver(new Uri(serverUrl), optionsDriver);
+
+        _environment.Value = $"{environmentFlex} + {environmentDriver}";
+    }
+
+    // Método utilitario interno para reutilizar la lógica de lectura del appsettings.json
+    private static AppiumOptions ConfigurarOpciones(IConfigurationSection appiumSection, IConfigurationSection envSection)
+    {
+        var options = new AppiumOptions();
+        options.PlatformName = envSection["PlatformName"];
+        options.PlatformVersion = envSection["PlatformVersion"];
+        options.DeviceName = envSection["DeviceName"];
+        options.AutomationName = appiumSection["AutomationName"];
+
+        var udid = envSection["Udid"];
+        if (!string.IsNullOrWhiteSpace(udid))
+        {
+            options.AddAdditionalAppiumOption("appium:udid", udid);
+        }
+
+        options.AddAdditionalAppiumOption("appium:systemPort", int.Parse(envSection["SystemPort"]!));
+        options.AddAdditionalAppiumOption("appium:uiautomator2ServerLaunchTimeout", 120000);
+        options.AddAdditionalAppiumOption("appium:newCommandTimeout", int.Parse(appiumSection["NewCommandTimeout"]!));
+        options.AddAdditionalAppiumOption("appium:autoGrantPermissions", bool.Parse(appiumSection["AutoGrantPermissions"]!));
+        options.AddAdditionalAppiumOption("appium:appPackage", envSection["AppPackage"] ?? appiumSection["AppPackage"]);
+        options.AddAdditionalAppiumOption("appium:appActivity", envSection["AppActivity"] ?? appiumSection["AppActivity"]);
+
+        return options;
+    }
     public static void Quit()
     {
         try
@@ -150,5 +201,26 @@ public static class DriverFactory
         }
 
         _driver.Value = null!;
+        
+        // Clean DriverFlex
+        try 
+        { 
+            _driverFlex.Value?.Quit(); 
+        } 
+        catch
+        {
+        }
+        _driverFlex.Value = null!;
+
+        // clean DriverDriver
+        try 
+        { 
+            _driverDriver.Value?.Quit(); 
+        } 
+        catch
+        {
+        }
+        _driverDriver.Value = null!;
+
     }
 }
