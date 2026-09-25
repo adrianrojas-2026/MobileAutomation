@@ -27,7 +27,7 @@ namespace MobileAutomation.Tests.Tests
 
             // 3. Verification and Operation in the Driver App
             Assert.That(driverMapPage.ValidateAlertVisibleTrip(), Is.True, "The Alarm Trip alert did not appear in the Driver app.");
-            driverMapPage.AceptarViaje();
+            driverMapPage.AcceptTrip();
         }
     }
 }

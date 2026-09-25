@@ -10,9 +10,14 @@ namespace MobileAutomation.Tests.Pages.FlexApp;
         private readonly AndroidDriver _driverFlex;
         private readonly WebDriverWait _wait;
 
-        // Localizadores (Usa los IDs reales que encuentres con Appium Inspector)
+        // Locators (Use real IDs using Appium Inspector)
         private readonly By _txtDestino = By.Id("flex.package:id/input_destination");
         private readonly By _btnEnviar = By.Id("flex.package:id/btn_enviar");
+        private readonly By _errorDialogLocator = By.Id("com.tetratech.recoverytracflex:id/txt_distance_error");
+        private readonly By _lblTicketStatus = By.Id("com.tetratech.recoverytracflex:id/txt_ticket_status");
+        private readonly By _btnScanQR = By.Id("com.tetratech.recoverytracflex:id/btn_scan_qr");
+        private readonly By _cameraOverlay = By.Id("com.tetratech.recoverytracflex:id/camera_preview_view"); // Adjust to your camera view ID
+      
 
         public FlexAppPage(AndroidDriver driver)
         {
@@ -22,14 +27,34 @@ namespace MobileAutomation.Tests.Pages.FlexApp;
 
         public void StartScan()
         {
-            var btn = _driverFlex.FindElement(By.Id("com.tetratech.recoverytracflex:id/btn_scan_qr"));
-            btn.Click();
+            _driverFlex.FindElement(_btnScanQR).Click();
+            // DYNAMIC WAIT: Wait up to 5 seconds for the camera overlay layout to be fully visible
+            var wait = new WebDriverWait(_driverFlex, TimeSpan.FromSeconds(5));
+            wait.Until(d => d.FindElement(_cameraOverlay).Displayed);
+        }
+
+        public bool IsDistanceErrorDisplayed()
+        {
+            try
+            {
+                var wait = new WebDriverWait(_driverFlex, TimeSpan.FromSeconds(5));
+                return wait.Until(d => d.FindElement(_errorDialogLocator).Displayed);
+            }
+            catch (WebDriverTimeoutException)
+            {
+                return false;
+            }
+        }
+        public string GetDistanceErrorMessage()
+        {
+            var wait = new WebDriverWait(_driverFlex, TimeSpan.FromSeconds(5));
+            return wait.Until(d => d.FindElement(_errorDialogLocator)).Text;
         }
 
         public string GetTicketStatus()
         {
-            var label = _driverFlex.FindElement(By.Id("com.tetratech.recoverytracflex:id/lbl_ticket_status"));
-            return label.Text;
+            var wait = new WebDriverWait(_driverFlex, TimeSpan.FromSeconds(5));
+            return wait.Until(d => d.FindElement(_lblTicketStatus)).Text;
         }
 
         public void CreateNewService(string direccion)
