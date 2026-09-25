@@ -10,7 +10,7 @@ namespace MobileAutomation.Tests.Pages.Driver;
         private readonly AndroidDriver _driver;
         private readonly WebDriverWait _wait;
 
-        private readonly MobileBy _btnAceptarViaje = (MobileBy)MobileBy.Id("driver.package:id/btn_aceptar_viaje");
+        private readonly By _btnAceptarViaje = By.Id("driver.package:id/btn_aceptar_viaje");
 
         public DriverAppPage(AndroidDriver driver)
         {
@@ -18,7 +18,13 @@ namespace MobileAutomation.Tests.Pages.Driver;
             _wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(15));
         }
 
-        public bool ValidarAlertaDeViajeVisible()
+        // Creas un método dedicado a la acción
+        public void GenerarTicket()
+        {
+            var btn = _driver.FindElement(By.Id("com.tetratech.recoverytracdriver:id/btn_generate_ticket"));
+            btn.Click();
+        }
+        public bool ValidateAlertVisibleTrip()
         {
             try
             {

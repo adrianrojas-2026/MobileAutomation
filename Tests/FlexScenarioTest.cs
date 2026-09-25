@@ -10,23 +10,23 @@ namespace MobileAutomation.Tests.Tests
         [SetUp]
         public void InicializarEscenarioDual()
         {
-            // Pasas los dos entornos configurados en tu appsettings.json 
-            // (Ej: Uno apuntando al emulador 5554 y el otro al 5556)
+            // Send two environments configured in your appsettings.json 
+            // (Example: One pointing to emulator 5554 and the other to 5556)
             DriverFactory.InitializeDualApps("Android_Flex", "Android_Driver");
         }
         
         [Test]
         public void TestAsignacionDeServicioE2E()
         {
-            // 1. Inicializar las páginas usando los drivers heredados de BaseTest
+            // 1. Initialize the pages using the drivers inherited from BaseTest
             var flexMainPage = new FlexAppPage(DriverFactory.DriverFlex);
             var driverMapPage = new DriverAppPage(DriverFactory.DriverDriver);
 
-            // 2. Operación en la App de Flex
-            flexMainPage.CrearNuevoServicio("Calle Falsa 123");
+            // 2. Operation in the Flex App
+            flexMainPage.CreateNewService("Calle Falsa 123");
 
-            // 3. Verificación y Operación en la App del Conductor
-            Assert.That(driverMapPage.ValidarAlertaDeViajeVisible(), Is.True, "La alerta de viaje no apareció en la app del Driver.");
+            // 3. Verification and Operation in the Driver App
+            Assert.That(driverMapPage.ValidateAlertVisibleTrip(), Is.True, "The Alarm Trip alert did not appear in the Driver app.");
             driverMapPage.AceptarViaje();
         }
     }

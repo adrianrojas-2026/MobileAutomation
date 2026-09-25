@@ -4,23 +4,23 @@ using OpenQA.Selenium.Appium.Android;
 namespace RecoveryTracTests
 {
     [TestFixture]
-    public class EscenariosCruzadosTests
+    public class CrossScenariosTests
     {
-        // 1. Declarar los ThreadLocal de forma simple sin inicializar internamente sus valores aquí
+        // 1. Declare the ThreadLocal variables simply without initializing their values here
         private static ThreadLocal<AndroidDriver> _driverFlex = new ThreadLocal<AndroidDriver>();
         private static ThreadLocal<AndroidDriver> _driverDriver = new ThreadLocal<AndroidDriver>();
 
-        // 2. Propiedades públicas limpias para exponer los drivers a los tests
+        // 2. Public properties to expose the drivers to the tests
         public static AndroidDriver DriverFlex => _driverFlex.Value!;
         public static AndroidDriver DriverDriver => _driverDriver.Value!;
 
         [SetUp]
         public void InicializarEmuladores()
         {
-            // El servidor de Appium 2.x consolidado
+            // Appium Server 2.x
             Uri appiumServerUri = new Uri("http://127.0.0.1:4723/");
 
-            // --- CONFIGURACIÓN PARA RECOVERY TRAC FLEX ---
+            // --- Configuration for RECOVERY TRAC FLEX ---
             var optionsFlex = new AppiumOptions();
             optionsFlex.PlatformName = "Android";
             optionsFlex.AutomationName = "UiAutomator2";
@@ -30,27 +30,27 @@ namespace RecoveryTracTests
             optionsFlex.AddAdditionalAppiumOption("appium:app", @"C:\apks\recovery_trac_flex.apk");
             optionsFlex.AddAdditionalAppiumOption("appium:systemPort", 8201);
 
-            // ASIGNACIÓN CORRECTA: Aquí es donde se le da el valor real al ThreadLocal
+            // Correct Assignation: Here set the real value to the first ThreadLocal
             _driverFlex.Value = new AndroidDriver(appiumServerUri, optionsFlex);
 
-            // --- CONFIGURACIÓN PARA RECOVERY TRAC DRIVER ---
+            // --- Configuration for RECOVERY TRAC DRIVER ---
             var optionsDriver = new AppiumOptions();
             optionsDriver.PlatformName = "Android";
             optionsDriver.AutomationName = "UiAutomator2";
 
-            optionsFlex.AddAdditionalAppiumOption("appium:deviceName", "Emulador_Flex_5556");
-            optionsFlex.AddAdditionalAppiumOption("appium:udid", "emulator-5556"); // ID from 'adb devices'
-            optionsFlex.AddAdditionalAppiumOption("appium:app", @"C:\apks\recovery_trac_driver.apk");
-            optionsFlex.AddAdditionalAppiumOption("appium:systemPort", 8202); 
+            optionsDriver.AddAdditionalAppiumOption("appium:deviceName", "Emulador_Flex_5556");
+            optionsDriver.AddAdditionalAppiumOption("appium:udid", "emulator-5556"); // ID from 'adb devices'
+            optionsDriver.AddAdditionalAppiumOption("appium:app", @"C:\apks\recovery_trac_driver.apk");
+            optionsDriver.AddAdditionalAppiumOption("appium:systemPort", 8202); 
             
-            // ASIGNACIÓN CORRECTA: Aquí se le da el valor real al segundo ThreadLocal
+            // Correct Assignation: Here set the real value to the second ThreadLocal
             _driverDriver.Value = new AndroidDriver(appiumServerUri, optionsDriver);
         }
 
         [TearDown]
-        public void FinalizarSesiones()
+        public void EndSessions()
         {
-            // Libera de forma segura la memoria de cada emulador al terminar
+            // Release secure way the memory for each emulator at the end of each test
             if (_driverFlex.IsValueCreated && _driverFlex.Value != null)
             {
                 _driverFlex.Value.Quit();
@@ -65,10 +65,10 @@ namespace RecoveryTracTests
         }
 
         [OneTimeTearDown]
-        public static void LiberarContenedoresEstaticos()
+        public static void ReleaseStaticContainers()
         {
-            // 2. SOLUCIÓN AL NUnit1032: Esto destruye los ThreadLocal estáticos 
-            // al finalizar TODA la suite de pruebas de esta clase.
+            // 2.This destroy the local containers 
+            // at the end
             _driverFlex?.Dispose();
             _driverDriver?.Dispose();
         }
