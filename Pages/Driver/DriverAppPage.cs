@@ -70,4 +70,19 @@ namespace MobileAutomation.Tests.Pages.Driver;
                 return false;
             }
         }
+
+        // Get the QR code as a Base64 string directly from the element, ensuring we capture only the QR code and not the entire screen.
+        public string GetQrCodeBase64(IWebElement qrElement)
+        {
+            // Appium permite tomar un screenshot directamente de un elemento específico del DOM/UI
+            var elementScreenshot = ((ITakesScreenshot)qrElement).GetScreenshot();
+            return elementScreenshot.AsBase64EncodedString;
+        }
+
+        public string GetOnlyQrCodeAsBase64()
+        {
+            // Finding the element using the locator you already defined above
+            IWebElement qrElement = _driver.FindElement(_qrCodeImageLocator);
+            return GetQrCodeBase64(qrElement);
+        }
     }
