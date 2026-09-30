@@ -10,7 +10,7 @@ schedules:
     include:
       - main # Specifies which branch code to pull for the scheduled run
   always: true # Runs even if there are no new code changes since the last run
-  
+
 # Defines the machine pool where your dedicated Azure Server Agent is registered
 pool:
   name: 'MyDedicatedMobilePool' # Replace with your actual Azure DevOps Agent Pool name
@@ -41,19 +41,12 @@ steps:
     projects: '**/*.csproj'
     arguments: '--configuration $(buildConfiguration)'
 
-# STEP 4: Boot both Android Emulators concurrently in the background
-# Make sure "Android_12" and "Android_14" match your exact AVD names in the Azure Server
-- script: |
-    echo "Booting Flex App Emulator (Android 12)..."
-    start /B %ANDROID_HOME%\emulator\emulator.exe -avd Android_12 -port 5554 -no-snapshot-load -no-boot-anim
-    
-    echo "Booting Driver App Emulator (Android 14)..."
-    start /B %ANDROID_HOME%\emulator\emulator.exe -avd Android_14 -port 5556 -no-snapshot-load -no-boot-anim
-    
-    echo "Waiting for Android Debug Bridge (ADB) to detect both devices..."
-    %ANDROID_HOME%\platform-tools\adb wait-for-device
-    echo "Both emulators are online and responsive."
-  displayName: 'Launch Android Emulators (Background)'
+# STEP 4: Boot all 6 Android Emulators concurrently via your custom Bootstrapper script
+- task: PowerShell@2
+  displayName: 'Launch 6-Emulator Testing Grid (Headless PowerShell)'
+  inputs:
+    filePath: '$(Build.SourcesDirectory)/Setup/Starf-MobileGrid.ps1'
+    errorActionPreference: 'stop'
 
 # STEP 5: Start the Appium Server in the background
 # The flag '--allow-insecure chromedriver_autodownload' is highly recommended for hybrid elements
@@ -90,11 +83,15 @@ steps:
     publishLocation: 'Container'
   condition: always() # Forces dashboard generation even if some tests threw assertion failures
 
-# STEP 8: Clean up and safely close emulators to release Server RAM & CPU
+# STEP 8: Clean up and safely close ALL 6 emulators to release Server RAM & CPU
 - script: |
-    echo "Terminating emulator sessions to clean up Azure Server resources..."
-    "%ANDROID_HOME%\platform-tools\adb.exe" -s emulator-5554 shell reboot -p
-    "%ANDROID_HOME%\platform-tools\adb.exe" -s emulator-5556 shell reboot -p
+    echo "Terminating all 6 emulator sessions to clean up Azure Server resources..."
+    "%ANDROID_HOME%\platform-tools\adb.exe" -s emulator-5554 shell reboot -p 2>nul
+    "%ANDROID_HOME%\platform-tools\adb.exe" -s emulator-5556 shell reboot -p 2>nul
+    "%ANDROID_HOME%\platform-tools\adb.exe" -s emulator-5558 shell reboot -p 2>nul
+    "%ANDROID_HOME%\platform-tools\adb.exe" -s emulator-5560 shell reboot -p 2>nul
+    "%ANDROID_HOME%\platform-tools\adb.exe" -s emulator-5562 shell reboot -p 2>nul
+    "%ANDROID_HOME%\platform-tools\adb.exe" -s emulator-5564 shell reboot -p 2>nul
     echo "Cleanup complete."
   displayName: 'Teardown Android Emulators'
   condition: always()
