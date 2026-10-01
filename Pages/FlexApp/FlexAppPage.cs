@@ -17,6 +17,7 @@ namespace MobileAutomation.Tests.Pages.FlexApp;
         private readonly By _lblTicketStatus = By.Id("com.tetratech.recoverytracflex:id/txt_ticket_status");
         private readonly By _btnScanQR = By.Id("com.tetratech.recoverytracflex:id/btn_scan_qr");
         private readonly By _cameraOverlay = By.Id("com.tetratech.recoverytracflex:id/camera_preview_view"); // Adjust to your camera view ID
+        private readonly By _qrCodeImageLocator = By.Id("com.tetratech.recoverytracdriver:id/img_ticket_qr_code"); //TBD
       
 
         public FlexAppPage(AndroidDriver driver)
@@ -70,6 +71,21 @@ namespace MobileAutomation.Tests.Pages.FlexApp;
                 return (elem.Displayed && elem.Enabled) ? elem : null;
             });
             botonEnviar!.Click();
+        }
+
+        // Get the QR code as a Base64 string directly from the element, ensuring we capture only the QR code and not the entire screen.
+        public string GetQrCodeBase64(IWebElement qrElement)
+        {
+            // Appium permite tomar un screenshot directamente de un elemento específico del DOM/UI
+            var elementScreenshot = ((ITakesScreenshot)qrElement).GetScreenshot();
+            return elementScreenshot.AsBase64EncodedString;
+        }
+
+        public string GetOnlyQrCodeAsBase64()
+        {
+            // Finding the element using the locator you already defined above
+            IWebElement qrElement = _driverFlex.FindElement(_qrCodeImageLocator);
+            return GetQrCodeBase64(qrElement);
         }
     }
 
