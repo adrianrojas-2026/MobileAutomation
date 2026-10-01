@@ -4,7 +4,7 @@ trigger:
 
 # 2. Automated Scheduled Triggers: Run automatically on a time-based schedule
 schedules:
-- cron: "0 2 * * 1-5" # Runs every Monday through Friday at 2:00 AM UTC (Adjust timezone as needed)
+- cron: "0 2 * * 1-5" # Runs every Monday through Friday at 2:00 AM UTC
   displayName: "Nightly E2E Dual-App Regression Suite"
   branches:
     include:
@@ -21,10 +21,10 @@ variables:
 steps:
 # STEP 1: Install the required .NET SDK on the server
 - task: UseDotNet@2
-  displayName: 'Install .NET SDK'
+  displayName: 'Install Latest .NET SDK'
   inputs:
     packageType: 'sdk'
-    version: '8.x' # Adjust this to match the .NET version of your Visual Studio Code project
+    version: '10.x' # Aligned to ensure compatibility with net10.0 compilation rules
 
 # STEP 2: Restore NuGet packages (Appium, Selenium, NUnit, etc.)
 - task: DotNetCoreCLI@2
@@ -48,12 +48,21 @@ steps:
     filePath: '$(Build.SourcesDirectory)/Setup/Starf-MobileGrid.ps1'
     errorActionPreference: 'stop'
 
-# STEP 5: Start the Appium Server in the background
-# The flag '--allow-insecure chromedriver_autodownload' is highly recommended for hybrid elements
-- script: |
-    echo "Starting Appium Server on default port 4723..."
-    start /B appium --port 4723 --allow-insecure chromedriver_autodownload
-  displayName: 'Start Appium Server'
+# STEP 5: Start the Appium Server safely in a completely isolated background process window
+- task: PowerShell@2
+  displayName: 'Start Background Appium Server Node'
+  inputs:
+    targetType: 'inline'
+    script: |
+      Write-Host "Launching Appium Engine in background window stream..."
+      # Start-Process prevents Azure DevOps from hanging on the live logging stream hook
+      Start-Process -FilePath "cmd.exe" -ArgumentList "/c appium --port 4723 --allow-insecure chromedriver_autodownload" -WindowStyle Hidden
+      
+      Write-Host "Allowing 5 seconds for local Appium loop to bind port 4723..."
+      Start-Sleep -Seconds 5
+      
+      # Optional quick-check validating loop presence
+      netstat -ano | findstr 4723
 
 # STEP 6: Execute the NUnit Dual-App Mobile Automation Tests
 - task: DotNetCoreCLI@2
@@ -71,27 +80,38 @@ steps:
     testResultsFormat: 'VSTest'
     testResultsFiles: '**/*.trx'
     mergeTestResults: true
-    failTaskOnFailedTests: false # Flashes the pipeline red if any NUnit assert fails
+    failTaskOnFailedTests: false # Keeps pipeline running to publish artifacts if asserts fail
 
-# 🚀 STEP 7.5: PUBLISH YOUR CUSTOM HTML REPORTS & SCREENSHOTS
+# STEP 7.5: PUBLISH YOUR CUSTOM HTML REPORTS & SCREENSHOTS
 - task: PublishBuildArtifacts@1
   displayName: 'Publish Custom HTML Automation Dashboard'
   inputs:
-    # Points to the exact workspace directory where your Reports folder gets generated
-    PathtoPublish: '$(Build.SourcesDirectory)/bin/Release/net8.0/Reports' # Adjust path if your generator saves it elsewhere (e.g., project root)
+    # Dynamically tracking path structure variations matching current compile targets
+    PathtoPublish: '$(Build.SourcesDirectory)/bin/Release/net10.0/Reports'
     ArtifactName: 'Mobile_Automation_HTML_Report'
     publishLocation: 'Container'
   condition: always() # Forces dashboard generation even if some tests threw assertion failures
 
-# STEP 8: Clean up and safely close ALL 6 emulators to release Server RAM & CPU
-- script: |
-    echo "Terminating all 6 emulator sessions to clean up Azure Server resources..."
-    "%ANDROID_HOME%\platform-tools\adb.exe" -s emulator-5554 shell reboot -p 2>nul
-    "%ANDROID_HOME%\platform-tools\adb.exe" -s emulator-5556 shell reboot -p 2>nul
-    "%ANDROID_HOME%\platform-tools\adb.exe" -s emulator-5558 shell reboot -p 2>nul
-    "%ANDROID_HOME%\platform-tools\adb.exe" -s emulator-5560 shell reboot -p 2>nul
-    "%ANDROID_HOME%\platform-tools\adb.exe" -s emulator-5562 shell reboot -p 2>nul
-    "%ANDROID_HOME%\platform-tools\adb.exe" -s emulator-5564 shell reboot -p 2>nul
-    echo "Cleanup complete."
-  displayName: 'Teardown Android Emulators'
-  condition: always()
+# STEP 8: Clean up and safely force-kill ALL 6 emulators to release Server RAM & CPU completely
+- task: PowerShell@2
+  displayName: 'Teardown Android Emulators & Release Infrastructure RAM'
+  inputs:
+    targetType: 'inline'
+    script: |
+      Write-Host "Sending soft-shutdown signals via ADB to clean execution blocks..."
+      $emulators = @("emulator-5554", "emulator-5556", "emulator-5558", "emulator-5560", "emulator-5562", "emulator-5564")
+      foreach ($emu in $emulators) {
+          & "$env:ANDROID_HOME\platform-tools\adb.exe" -s $emu shell reboot -p 2>$null
+      }
+      
+      Start-Sleep -Seconds 3
+      
+      Write-Host "Executing fallback hard-wipe of underlying window system process threads to prevent offline hang locks..."
+      # Hard kill ensures no zombie threads remain hidden on your dedicated cloud VM
+      Stop-Process -Name "qemu-system-x86_64" -Force -ErrorAction SilentlyContinue
+      Stop-Process -Name "emulator" -Force -ErrorAction SilentlyContinue
+      
+      Write-Host "Flushing global ADB network connections..."
+      & "$env:ANDROID_HOME\platform-tools\adb.exe" kill-server
+      Write-Host "Teardown execution loop concluded successfully."
+  condition: always() # Ensures your server agent's memory deck is wiped clean even if a scenario crashes
