@@ -11,45 +11,39 @@ public static class DriverFactory
     public static AppiumDriver Driver => _driver.Value!;
     public static AndroidDriver AndroidDriver => (AndroidDriver)Driver;
 
-        // --- NUEVOS CONTENEDORES EXCLUSIVOS (Para escenarios simultáneos Flex + Driver) ---
+    // --- NUEVOS CONTENEDORES EXCLUSIVOS (Para escenarios simultáneos Flex + Driver) ---
     private static ThreadLocal<AndroidDriver> _driverFlex = new();
     private static ThreadLocal<AndroidDriver> _driverDriver = new();
 
     public static AndroidDriver DriverFlex => _driverFlex.Value!;
     public static AndroidDriver DriverDriver => _driverDriver.Value!;
 
-
-    // --- Shared enviroment variables ---
+    // --- Shared environment variables ---
     private static readonly ThreadLocal<string> _environment = new();
     private static readonly ThreadLocal<string> _platformVersion = new();
     private static readonly ThreadLocal<string> _deviceName = new();
     private static readonly ThreadLocal<string> _udid = new();
 
-    public static string CurrentEnvironment =>
-        _environment.Value ?? string.Empty;
-    public static string CurrentPlatformVersion =>
-        _platformVersion.Value ?? string.Empty;
+    public static string CurrentEnvironment => _environment.Value ?? string.Empty;
+    public static string CurrentPlatformVersion => _platformVersion.Value ?? string.Empty;
+    public static string CurrentDeviceName => _deviceName.Value ?? string.Empty;
+    public static string CurrentUdid => _udid.Value ?? string.Empty;
 
-    public static string CurrentDeviceName =>
-        _deviceName.Value ?? string.Empty;
-
-    public static string CurrentUdid =>
-        _udid.Value ?? string.Empty;
-
-    public static void Initialize(string environment)
+    // Update the method signature to accept an optional app override ("flex" or "driver")
+    public static void Initialize(string environment, string appTarget = "flex")
     {
-        IConfiguration config =
-            new ConfigurationBuilder()
-                .SetBasePath(AppContext.BaseDirectory)
-                .AddJsonFile(
-                    "Config/appsettings.json",
-                    optional: false,
-                    reloadOnChange: false)
-                .Build();
+        IConfiguration config = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("Config/appsettings.json", optional: false, reloadOnChange: false)
+            .Build();
 
         var appiumSection = config.GetSection("Appium");
-        var envSection =
-            config.GetSection($"MobileConfigurations:{environment}");
+        var envSection = config.GetSection($"MobileConfigurations:{environment}");
+
+        if (!envSection.Exists())
+        {
+            throw new ArgumentException($"The configuration profile key '{environment}' was not found in appsettings.json.");
+        }
 
         Console.WriteLine("=================================");
         Console.WriteLine($"Environment = {environment}");
@@ -60,86 +54,72 @@ public static class DriverFactory
         Console.WriteLine("=================================");
 
         _environment.Value = environment;
-        _platformVersion.Value =
-            envSection["PlatformVersion"] ?? string.Empty;;
-
-        _deviceName.Value =
-            envSection["DeviceName"] ?? string.Empty;;
-
-        _udid.Value =
-            envSection["Udid"] ?? string.Empty;;
+        _platformVersion.Value = envSection["PlatformVersion"] ?? string.Empty;
+        _deviceName.Value = envSection["DeviceName"] ?? string.Empty;
+        _udid.Value = envSection["Udid"] ?? string.Empty;
 
         var options = new AppiumOptions();
-
         options.PlatformName = envSection["PlatformName"];
-
         options.PlatformVersion = envSection["PlatformVersion"];
-
         options.DeviceName = envSection["DeviceName"];
-
         options.AutomationName = appiumSection["AutomationName"];
 
         var udid = envSection["Udid"];
-
         if (!string.IsNullOrWhiteSpace(udid))
         {
-            options.AddAdditionalAppiumOption(
-                "appium:udid",
-                udid);
-       }
+            options.AddAdditionalAppiumOption("appium:udid", udid);
+        }
 
-       options.AddAdditionalAppiumOption(
-            "appium:uiautomator2ServerLaunchTimeout",
-            120000);
+        options.AddAdditionalAppiumOption("appium:uiautomator2ServerLaunchTimeout", 120000);
 
-       options.AddAdditionalAppiumOption(
-            "appium:systemPort",
-            int.Parse(envSection["SystemPort"]!));
-
-        options.AddAdditionalAppiumOption(
-            "appium:newCommandTimeout",
-            int.Parse(appiumSection["NewCommandTimeout"]!));
-
-        options.AddAdditionalAppiumOption(
-            "appium:autoGrantPermissions",
-            bool.Parse(appiumSection["AutoGrantPermissions"]!));
-
-        options.AddAdditionalAppiumOption(
-            "appium:chromedriverAutodownload",
-            bool.Parse(appiumSection["ChromedriverAutodownload"]!));
-
-        if (string.Equals(options.PlatformName,
-            "Android",
-            StringComparison.OrdinalIgnoreCase))
+        // SAFE NULL FALLBACK PARSING FOR PORTS
+        var systemPortStr = envSection["SystemPort"];
+        if (!string.IsNullOrWhiteSpace(systemPortStr))
         {
-            options.AddAdditionalAppiumOption(
-                "appium:appPackage",
-                appiumSection["AppPackage"]);
+            options.AddAdditionalAppiumOption("appium:systemPort", int.Parse(systemPortStr));
+        }
 
-            options.AddAdditionalAppiumOption(
-                "appium:appActivity",
-                appiumSection["AppActivity"]);
+        var mjpegPortStr = envSection["mjpegServerPort"];
+        if (!string.IsNullOrWhiteSpace(mjpegPortStr))
+        {
+            options.AddAdditionalAppiumOption("appium:mjpegServerPort", int.Parse(mjpegPortStr));
+        }
 
-            _driver.Value = 
-                new AndroidDriver(
-                    new Uri(appiumSection["ServerUrl"]!),
-                    options);
+        options.AddAdditionalAppiumOption("appium:newCommandTimeout", int.Parse(appiumSection["NewCommandTimeout"]!));
+        options.AddAdditionalAppiumOption("appium:autoGrantPermissions", bool.Parse(appiumSection["AutoGrantPermissions"]!));
+        options.AddAdditionalAppiumOption("appium:chromedriverAutodownload", bool.Parse(appiumSection["ChromedriverAutodownload"]!));
+
+        if (string.Equals(options.PlatformName, "Android", StringComparison.OrdinalIgnoreCase))
+        {
+            // 💡 DYNAMIC APP TARGETING LOGIC
+            string package;
+            string activity;
+
+            if (string.Equals(appTarget, "driver", StringComparison.OrdinalIgnoreCase))
+            {
+                package = "com.tetratech.recoverytracdriver";
+                activity = "com.tetratech.recoverytracdriver.MainActivity";
+            }
+            else // Defaults to Flex app
+            {
+                package = "com.tetratech.recoverytracflex";
+                activity = "com.tetratech.recoverytracflex.MainActivity";
+            }
+
+            // FALLBACK TO GLOBAL APPIUM APP PARAMETERS IF PROFILE LACKS UNIQUE EXPLICIT PATHS
+            options.AddAdditionalAppiumOption("appium:appPackage", package);
+            options.AddAdditionalAppiumOption("appium:appActivity", activity);
+
+            _driver.Value = new AndroidDriver(new Uri(appiumSection["ServerUrl"]!), options);
             
             var androidDriver = (AndroidDriver)Driver;
-            Console.WriteLine(
-                $"Connected to Android {androidDriver.Capabilities.GetCapability("platformVersion")}");
-            Console.WriteLine(
-                $"Connected to device {androidDriver.Capabilities.GetCapability("udid")}");
+            Console.WriteLine($"Connected to Android {androidDriver.Capabilities.GetCapability("platformVersion")}");
+            Console.WriteLine($"Connected to device {androidDriver.Capabilities.GetCapability("udid")}");
         }
         else
         {
-            options.AddAdditionalAppiumOption(
-                "appium:automationName",
-                "XCUITest");
-
-            _driver.Value = new IOSDriver(
-                new Uri(appiumSection["ServerUrl"]!),
-                options);
+            options.AddAdditionalAppiumOption("appium:automationName", "XCUITest");
+            _driver.Value = new IOSDriver(new Uri(appiumSection["ServerUrl"]!), options);
         }
     }
     
@@ -155,19 +135,18 @@ public static class DriverFactory
 
         // 1. INICIALIZAR RECOVERY TRAC FLEX
         var envFlexSection = config.GetSection($"MobileConfigurations:{environmentFlex}");
-        var optionsFlex = ConfigurarOpciones(appiumSection, envFlexSection);
+        var optionsFlex = ConfigurarOpciones(appiumSection, envFlexSection, "f");
         _driverFlex.Value = new AndroidDriver(new Uri(serverUrl), optionsFlex);
 
         // 2. INICIALIZAR RECOVERY TRAC DRIVER
         var envDriverSection = config.GetSection($"MobileConfigurations:{environmentDriver}");
-        var optionsDriver = ConfigurarOpciones(appiumSection, envDriverSection);
+        var optionsDriver = ConfigurarOpciones(appiumSection, envDriverSection, "driver");
         _driverDriver.Value = new AndroidDriver(new Uri(serverUrl), optionsDriver);
 
         _environment.Value = $"{environmentFlex} + {environmentDriver}";
     }
 
-    // Método utilitario interno para reutilizar la lógica de lectura del appsettings.json
-    private static AppiumOptions ConfigurarOpciones(IConfigurationSection appiumSection, IConfigurationSection envSection)
+    private static AppiumOptions ConfigurarOpciones(IConfigurationSection appiumSection, IConfigurationSection envSection, string appTarget)
     {
         var options = new AppiumOptions();
         options.PlatformName = envSection["PlatformName"];
@@ -181,46 +160,67 @@ public static class DriverFactory
             options.AddAdditionalAppiumOption("appium:udid", udid);
         }
 
-        options.AddAdditionalAppiumOption("appium:systemPort", int.Parse(envSection["SystemPort"]!));
+        var systemPortStr = envSection["SystemPort"];
+        if (!string.IsNullOrWhiteSpace(systemPortStr))
+        {
+            options.AddAdditionalAppiumOption("appium:systemPort", int.Parse(systemPortStr));
+        }
+
+        var mjpegPortStr = envSection["mjpegServerPort"];
+        if (!string.IsNullOrWhiteSpace(mjpegPortStr))
+        {
+            options.AddAdditionalAppiumOption("appium:mjpegServerPort", int.Parse(mjpegPortStr));
+        }
+
         options.AddAdditionalAppiumOption("appium:uiautomator2ServerLaunchTimeout", 120000);
         options.AddAdditionalAppiumOption("appium:newCommandTimeout", int.Parse(appiumSection["NewCommandTimeout"]!));
         options.AddAdditionalAppiumOption("appium:autoGrantPermissions", bool.Parse(appiumSection["AutoGrantPermissions"]!));
-        options.AddAdditionalAppiumOption("appium:appPackage", envSection["AppPackage"] ?? appiumSection["AppPackage"]);
-        options.AddAdditionalAppiumOption("appium:appActivity", envSection["AppActivity"] ?? appiumSection["AppActivity"]);
+        
+        // 💡 DYNAMIC TARGET OVERRIDE INSIDE DUAL METHOD TOO
+        string package;
+        string activity;
+
+        if (string.Equals(appTarget, "driver", StringComparison.OrdinalIgnoreCase))
+        {
+            package = "com.tetratech.recoverytracdriver";
+            activity = "com.tetratech.recoverytracdriver.MainActivity";
+        }
+        else
+        {
+            package = "com.tetratech.recoverytracflex";
+            activity = "com.tetratech.recoverytracflex.MainActivity";
+        }
+
+        options.AddAdditionalAppiumOption("appium:appPackage", package);
+        options.AddAdditionalAppiumOption("appium:appActivity", activity);
 
         return options;
     }
+
     public static void Quit()
     {
+        // 1. Clean Base Driver
         try
         {
             _driver.Value?.Quit();
         }
-        catch
-        {
-        }
-
+        catch { /* Suppress runtime loop faults */ }
         _driver.Value = null!;
         
-        // Clean DriverFlex
+        // 2. Clean DriverFlex
         try 
         { 
             _driverFlex.Value?.Quit(); 
         } 
-        catch
-        {
-        }
+        catch { /* Suppress runtime loop faults */ }
         _driverFlex.Value = null!;
 
-        // clean DriverDriver
+        // 3. Clean DriverDriver
         try 
         { 
             _driverDriver.Value?.Quit(); 
         } 
-        catch
-        {
-        }
+        catch { /* Suppress runtime loop faults */ }
         _driverDriver.Value = null!;
-
     }
 }

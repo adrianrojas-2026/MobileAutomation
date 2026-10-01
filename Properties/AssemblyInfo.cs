@@ -1,3 +1,5 @@
 using NUnit.Framework;
 
-[assembly: LevelOfParallelism(3)]
+// Defines how many worker threads can execute mobile tests concurrently
+[assembly: Parallelizable(ParallelScope.Fixtures)]
+[assembly: LevelOfParallelism(4)] 
