@@ -37,6 +37,23 @@ namespace RecoveryTrac.AutomatedTests
             DriverFactory.Quit();
         }
 
+        // 🚀 NEW: Clears thread-static allocations immediately after this class finishes executing
+        [OneTimeTearDown]
+        public void FinalizeClassDisposal()
+        {
+            Console.WriteLine("Disposing class-level ThreadLocal explicit wait resources to prevent engine memory leaks...");
+            
+            if (_waitFlex != null)
+            {
+                _waitFlex.Dispose();
+            }
+
+            if (_waitDriver != null)
+            {
+                _waitDriver.Dispose();
+            }
+        }
+
         [Test]
         public void Test_LoadDisposal_To_ReceiptSync_Complete_Parallel_E2E()
         {

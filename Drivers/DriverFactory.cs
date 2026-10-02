@@ -133,6 +133,8 @@ public static class DriverFactory
         var appiumSection = config.GetSection("Appium");
         string serverUrl = appiumSection["ServerUrl"]!;
 
+        if (!config.GetSection($"MobileConfigurations:{environmentFlex}").Exists()) throw new ArgumentException("Invalid environment specified for Flex app.");
+        if (!config.GetSection($"MobileConfigurations:{environmentDriver}").Exists()) throw new ArgumentException("Invalid environment specified for Driver app.");
         // 1. INICIALIZAR RECOVERY TRAC FLEX
         var envFlexSection = config.GetSection($"MobileConfigurations:{environmentFlex}");
         var optionsFlex = ConfigurarOpciones(appiumSection, envFlexSection, "f");

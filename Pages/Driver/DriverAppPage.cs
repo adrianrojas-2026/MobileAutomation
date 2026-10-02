@@ -1,6 +1,5 @@
 // Pages/DriverApp/DriverMapPage.cs
 using OpenQA.Selenium;
-using OpenQA.Selenium.Appium;
 using OpenQA.Selenium.Appium.Android;
 using OpenQA.Selenium.Support.UI;
 
@@ -21,7 +20,7 @@ namespace MobileAutomation.Tests.Pages.Driver;
             _wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(15));
         }
 
-        // Create method for generating a ticket
+        // Create method for generating a ticket// DriverAppPage.GetOnlyQrCodeAsBase64()
         public void GenerateTicket()
         {
             var btn = _driver.FindElement(By.Id("com.tetratech.recoverytracdriver:id/btn_generate_ticket"));
@@ -82,7 +81,7 @@ namespace MobileAutomation.Tests.Pages.Driver;
         public string GetOnlyQrCodeAsBase64()
         {
             // Finding the element using the locator you already defined above
-            IWebElement qrElement = _driver.FindElement(_qrCodeImageLocator);
+            IWebElement qrElement = _wait.Until(d => d.FindElement(_qrCodeImageLocator));
             return GetQrCodeBase64(qrElement);
         }
     }
