@@ -4,7 +4,7 @@ namespace MobileAutomation.Tests.Scenarios;
 
 // 💡 This instructs NUnit to run two instances of this test class in parallel
 [TestFixture("Grid_Node1_Driver", "driver")]
-[TestFixture("Grid_Node2_Flex", "flex")]
+[TestFixture("Grid_Node1_Flex", "flex")]
 public class ParallelDriverTrackingTests
 {
     private readonly string _targetDevice;

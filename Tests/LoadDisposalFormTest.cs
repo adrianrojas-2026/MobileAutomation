@@ -200,7 +200,7 @@ namespace RecoveryTrac.AutomatedTests
             string receiptQrBase64 = qrScreenshot.AsBase64EncodedString;
 
             // 3. Switch context to Driver App and tap the 'Scan Receipt' navigation box
-            var btnDriverScanReceipt = wd.Until(d => {
+            var btnDriverScanReceipt = wf.Until(d => {
                 var el = d.FindElement(MobileBy.XPath("//android.widget.Button[contains(@text, 'Scan Receipt')] | //android.widget.TextView[@text='Scan Receipt']"));
                 return (el != null && el.Displayed) ? el : null;
             });
