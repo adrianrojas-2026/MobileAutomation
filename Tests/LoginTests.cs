@@ -175,9 +175,5 @@ public class LoginTests : BaseTest
 
                 throw;
             }
-        finally
-        {
-           DriverFactory.Quit();
-        }
     }
 }
