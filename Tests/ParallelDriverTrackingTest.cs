@@ -3,8 +3,8 @@ using MobileAutomation.Tests.Drivers;
 namespace MobileAutomation.Tests.Scenarios;
 
 // 💡 This instructs NUnit to run two instances of this test class in parallel
-[TestFixture("Android14", "driver")]
-[TestFixture("Android12", "flex")]
+[TestFixture("Grid_Node1_Driver", "driver")]
+[TestFixture("Grid_Node2_Flex", "flex")]
 public class ParallelDriverTrackingTests
 {
     private readonly string _targetDevice;

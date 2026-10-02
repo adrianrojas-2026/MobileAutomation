@@ -2,6 +2,8 @@
 using MobileAutomation.Tests.Pages;
 using MobileAutomation.Tests.Utilities;
 using MobileAutomation.Tests.Reporting;
+using OpenQA.Selenium.Support.UI;
+using Microsoft.Extensions.Configuration;
 
 namespace MobileAutomation.Tests.Tests;
 
@@ -41,11 +43,37 @@ public class LoginTests : BaseTest
         {
             DriverFactory.Initialize(environment);
             
+            var environmentVariables = new Dictionary<string, string?>();
+            foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
+            {
+                var key = entry.Key?.ToString();
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                // Azure DevOps and other CI systems commonly export variables with __ separators.
+                // This converts them to the ':' format expected by the configuration binding.
+                var normalizedKey = key.Replace("__", ":");
+                environmentVariables[normalizedKey] = entry.Value?.ToString();
+            }
+
+            IConfiguration config = new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("Config/appsettings.json", optional: false, reloadOnChange: false)
+                .AddInMemoryCollection(environmentVariables)
+                .Build();
+
+            string email = config["TestSettings:LoginEmail"] ?? throw new NullReferenceException("LoginEmail setting is missing.");
+            string password = config["TestSettings:LoginPassword"] ?? throw new NullReferenceException("LoginPassword setting is missing.");
+            int timeout = int.Parse(config["TestSettings:ExplicitWaitTimeoutSeconds"] ?? "15");
+
             Assert.That(
                 DriverFactory.AndroidDriver.CurrentPackage,
                 Is.EqualTo("com.tetratech.recoverytracflex"));
             
-            Thread.Sleep(5000);
+            var wait = new WebDriverWait(DriverFactory.AndroidDriver, TimeSpan.FromSeconds(timeout));
+    
             foreach (var context in DriverFactory.Driver.Contexts)
             {
                 Console.WriteLine(context);
@@ -57,8 +85,8 @@ public class LoginTests : BaseTest
             var loginPage = new LoginPage(DriverFactory.AndroidDriver);
             
             loginPage.LoginTrac(
-                "test@gmail.com",
-                "Trac1234");
+                email,
+                password);
 
             var screenshotsFolder =
                 Path.Combine(
@@ -149,7 +177,7 @@ public class LoginTests : BaseTest
             }
         finally
         {
-           
+           DriverFactory.Quit();
         }
     }
 }

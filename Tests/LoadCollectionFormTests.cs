@@ -27,6 +27,11 @@ namespace RecoveryTrac.AutomatedTests
         {
             Console.WriteLine("Disposing class-level ThreadLocal explicit wait resources to prevent engine memory leaks...");
             
+             if (_wait != null)
+            {   
+                _wait.Dispose();
+            }
+
             if (_waitDriver != null)
             {
                 _waitDriver.Dispose();
@@ -40,7 +45,7 @@ namespace RecoveryTrac.AutomatedTests
             try
             {
                 var clearArgs = new Dictionary<string, object> { { "payload", "" } };
-                DriverFactory.AndroidDriver.ExecuteScript("mobile: injectEmulatorCameraImage", clearArgs);
+                DriverFactory.DriverFlex.ExecuteScript("mobile: injectEmulatorCameraImage", clearArgs);
             }
             catch { /* Suppress non-blocking cleanup errors */ }
 
@@ -111,7 +116,7 @@ namespace RecoveryTrac.AutomatedTests
             });
             Assert.That(successToast.Text, Is.EqualTo("The QR code was scanned successfully, and 4 controls were populated."));
 
-            var inputTruckNumber = driver.FindElement(MobileBy.XPath("//android.widget.EditText[contains(@text,'1000') | contains(@text,'9999')]"));
+            var inputTruckNumber = driver.FindElement(MobileBy.XPath("//android.widget.EditText[contains(@text,'1000') or contains(@text,'9999')]"));
             Assert.That(inputTruckNumber.Text, Is.Not.Null.Or.Empty);
 
             // -------------------------------------------------------------------------

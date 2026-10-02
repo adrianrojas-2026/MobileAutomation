@@ -132,7 +132,7 @@ public static class DriverFactory
         }
     }
     
-    public static void InitializeDualApps(string environmentFlex = "Grid_Node1_Flex", string environmentDriver = "Grid_Node1_Driver")
+    public static void InitializeDualApps()
     {
         // Lease an available node pair from the pool
         if (!_availableNodesPool.TryDequeue(out var node))
@@ -140,8 +140,8 @@ public static class DriverFactory
                 "No emulator node pairs available. All grid nodes are in use.");
 
         _leasedNode.Value = node;
-        environmentFlex = node.Item1;
-        environmentDriver = node.Item2;
+        string environmentFlex = node.Item1;
+        string environmentDriver = node.Item2;
 
         IConfiguration config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)

@@ -329,7 +329,7 @@ td{
                     📷 Open
                 </a>
             </td>
-            <td>{result.ErrorMessage}</td>
+            <td>{System.Net.WebUtility.HtmlEncode(result.ErrorMessage)}</td>
         </tr>
         """);
     }
