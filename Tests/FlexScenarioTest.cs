@@ -9,7 +9,7 @@ namespace MobileAutomation.Tests.Tests
     public class FlexScenarioTest : BaseTest
     {
         [SetUp]
-        public void InicializarEscenarioDual()
+        public void SetupDualScenario()
         {
             // Send two environments configured in your appsettings.json 
             // (Example: One pointing to emulator 5554 and the other to 5556)
@@ -17,7 +17,7 @@ namespace MobileAutomation.Tests.Tests
         }
 
         [TearDown]
-        public void FinalizarEscenarioDual()
+        public void TeardownDualScenario()
         {
             Console.WriteLine("[Cleanup] Terminating dual drivers and releasing the leased emulator pair back to the pool...");
             // Crucial: Frees up the leased emulators so the next parallel class can immediately use them

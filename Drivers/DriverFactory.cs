@@ -167,18 +167,17 @@ public static class DriverFactory
         if (!config.GetSection($"MobileConfigurations:{environmentDriver}").Exists()) throw new ArgumentException("Invalid environment specified for Driver app.");
         // 1. INICIALIZAR RECOVERY TRAC FLEX
         var envFlexSection = config.GetSection($"MobileConfigurations:{environmentFlex}");
-        var optionsFlex = ConfigurarOpciones(appiumSection, envFlexSection, "f");
+        var optionsFlex = ConfigureOptions(appiumSection, envFlexSection, "f");
         _driverFlex.Value = new AndroidDriver(new Uri(serverUrl), optionsFlex);
 
         // 2. INICIALIZAR RECOVERY TRAC DRIVER
         var envDriverSection = config.GetSection($"MobileConfigurations:{environmentDriver}");
-        var optionsDriver = ConfigurarOpciones(appiumSection, envDriverSection, "driver");
+        var optionsDriver = ConfigureOptions(appiumSection, envDriverSection, "driver");
         _driverDriver.Value = new AndroidDriver(new Uri(serverUrl), optionsDriver);
 
         _environment.Value = $"{environmentFlex} + {environmentDriver}";
     }
-
-    private static AppiumOptions ConfigurarOpciones(IConfigurationSection appiumSection, IConfigurationSection envSection, string appTarget)
+    private static AppiumOptions ConfigureOptions(IConfigurationSection appiumSection, IConfigurationSection envSection, string appTarget)
     {
         var options = new AppiumOptions();
         options.PlatformName = envSection["PlatformName"];

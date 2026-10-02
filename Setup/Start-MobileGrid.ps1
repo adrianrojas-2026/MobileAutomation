@@ -5,7 +5,7 @@ $emulatorPath = "$env:ANDROID_HOME\emulator\emulator.exe"
 $adbPath = "$env:ANDROID_HOME\platform-tools\adb.exe"
 
 # 💡 TOGGLE THIS VALUE: true for pipeline headless mode | false to see the UI Windows locally!
-headlessMode = false
+$headlessMode = false
 
 # Define the exact emulators created by your setup script and map them to sequential ports
 $emulatorsToBoot = @(
