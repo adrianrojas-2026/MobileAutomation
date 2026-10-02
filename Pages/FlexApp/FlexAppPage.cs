@@ -17,7 +17,7 @@ namespace MobileAutomation.Tests.Pages.FlexApp;
         private readonly By _lblTicketStatus = By.Id("com.tetratech.recoverytracflex:id/txt_ticket_status");
         private readonly By _btnScanQR = By.Id("com.tetratech.recoverytracflex:id/btn_scan_qr");
         private readonly By _cameraOverlay = By.Id("com.tetratech.recoverytracflex:id/camera_preview_view"); // Adjust to your camera view ID
-        private readonly By _qrCodeImageLocator = By.Id("com.tetratech.recoverytracdriver:id/img_ticket_qr_code"); //TBD
+        private readonly By _qrCodeImageLocator = By.Id("com.tetratech.recoverytracflex:id/img_ticket_qr_code"); //TBD
       
 
         public FlexAppPage(AndroidDriver driver)

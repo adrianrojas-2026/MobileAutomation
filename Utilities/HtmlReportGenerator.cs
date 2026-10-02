@@ -295,11 +295,6 @@ td{
 
     <table>
 
-    """);
-
-        html.Append($"""
-    <table>
-
     <tr>
         <th>Environment</th>
         <th>Android Version</th>
@@ -314,7 +309,7 @@ td{
     """);
 
    foreach (var result in Results
-        .OrderBy(r => double.Parse(r.PlatformVersion)))
+        .OrderBy(r => double.TryParse(r.PlatformVersion, out var v) ? v : 0))
     {
         html.Append($"""
         <tr>
@@ -341,6 +336,9 @@ td{
 
     html.Append("""
     </table>
+
+</body>
+</html>
     """);
         var reportFolder =
             Path.Combine(

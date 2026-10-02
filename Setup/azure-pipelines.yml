@@ -45,7 +45,7 @@ steps:
 - task: PowerShell@2
   displayName: 'Launch 6-Emulator Testing Grid (Headless PowerShell)'
   inputs:
-    filePath: '$(Build.SourcesDirectory)/Setup/Starf-MobileGrid.ps1'
+    filePath: '$(Build.SourcesDirectory)/Setup/Start-MobileGrid.ps1'
     errorActionPreference: 'stop'
 
 # STEP 5: Start the Appium Server safely in a completely isolated background process window
