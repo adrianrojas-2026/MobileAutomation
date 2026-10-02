@@ -62,13 +62,14 @@ namespace RecoveryTrac.AutomatedTests
             var driverPage = new DriverAppPage(driverDriver);
             
             var wf = _waitFlex.Value!;
-            var wd = _waitDriver.Value!;
+            var wd = _waitDriver.Value
+            ;
 
             // =========================================================================
             // STEP 1: Tap on Forms Option (Bottom Navigation Bar)
             // =========================================================================
             var formsTab = wf.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Forms'] ! //*[@content-desc='Forms']"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Forms'] | //*[@content-desc='Forms']"));
                 return (el != null && el.Displayed) ? el : null;
             });
             formsTab.Click();

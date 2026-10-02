@@ -29,6 +29,14 @@ public static class DriverFactory
     public static string CurrentDeviceName => _deviceName.Value ?? string.Empty;
     public static string CurrentUdid => _udid.Value ?? string.Empty;
 
+   // Update the pool declaration in your DriverFactory to use the new isolated nodes
+    private static readonly System.Collections.Concurrent.ConcurrentQueue<Tuple<string, string>> _availableNodesPool = new(new[]
+    {
+        Tuple.Create("Grid_Node1_Flex", "Grid_Node1_Driver"), // Leased by the first concurrent thread
+        Tuple.Create("Grid_Node2_Flex", "Grid_Node2_Driver"), // Leased by the second concurrent thread
+        Tuple.Create("Grid_Node3_Flex", "Grid_Node3_Driver")  // Leased by the third concurrent thread
+    });
+
     // Update the method signature to accept an optional app override ("flex" or "driver")
     public static void Initialize(string environment, string appTarget = "flex")
     {
