@@ -42,14 +42,11 @@ public class ParallelDriverTrackingTests
         try
         {
             // 🟢 Force-close the app from the emulator RAM before dropping the driver connection
-            if (DriverFactory.Driver != null)
-            {
-                string targetPackage = string.Equals(_targetApp, "driver", StringComparison.OrdinalIgnoreCase)
-                    ? "com.tetratech.recoverytracdriver"
-                    : "com.tetratech.recoverytracflex";
+            string targetPackage = string.Equals(_targetApp, "driver", StringComparison.OrdinalIgnoreCase)
+                ? "com.tetratech.recoverytracdriver"
+                : "com.tetratech.recoverytracflex";
 
-                DriverFactory.AndroidDriver.TerminateApp(targetPackage);
-            }
+            DriverFactory.AndroidDriver.TerminateApp(targetPackage);
         }
         catch (Exception ex)
         {
