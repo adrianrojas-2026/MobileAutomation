@@ -110,8 +110,6 @@ public class LoginTests : BaseTest
                 btnGetStarted.Click();
                 Console.WriteLine("[Flow Automation] Successfully tapped 'GET STARTED'. Onboarding wizard cleared cleanly.");
                 
-                // Optional short wait buffer if the app performs a minor context transition animation right after the click
-                System.Threading.Thread.Sleep(1000); 
             }
 
             var screenshotsFolder =

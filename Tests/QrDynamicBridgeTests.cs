@@ -89,8 +89,7 @@ namespace RecoveryTrac.AutomatedTests
             // --- STEP 5: Real-Time Camera Injection ---
             var scriptArgs = new Dictionary<string, object> { { "payload", qrImageBase64 } };
             DriverFactory.DriverFlex.ExecuteScript("mobile: injectEmulatorCameraImage", scriptArgs);
-            Thread.Sleep(2000);
-
+            
             // --- STEP 6: Assertions ---
             Assert.That(flexMainPage.GetTicketStatus(), Is.EqualTo("Ticket Synchronized Successfully"), "The ticket was not successfully synced in the Flex app.");
         }

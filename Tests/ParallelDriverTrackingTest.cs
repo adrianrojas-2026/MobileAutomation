@@ -29,7 +29,6 @@ public class ParallelDriverTrackingTests
     public void VerifyAppLaunchesAndInitializesCorrectly()
     {
         var driver = DriverFactory.AndroidDriver;
-        Thread.Sleep(2000); // Allow some time for the app to stabilize
         // Both emulators will now execute this step at the exact same time on different ports!
         Console.WriteLine($"Running parallel execution on: {DriverFactory.CurrentDeviceName} with UDID: {DriverFactory.CurrentUdid}");
         

@@ -87,7 +87,7 @@ steps:
   displayName: 'Publish Custom HTML Automation Dashboard'
   inputs:
     # Dynamically tracking path structure variations matching current compile targets
-    PathtoPublish: '$(Build.SourcesDirectory)/bin/Release/net10.0/Reports'
+    PathtoPublish: '$(Build.SourcesDirectory)/MobileAutomation-Appium/bin/Release/net10.0/Reports'
     ArtifactName: 'Mobile_Automation_HTML_Report'
     publishLocation: 'Container'
   condition: always() # Forces dashboard generation even if some tests threw assertion failures
