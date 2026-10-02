@@ -83,8 +83,8 @@ namespace MobileAutomation.Tests.Pages.FlexApp;
 
         public string GetOnlyQrCodeAsBase64()
         {
-            // Finding the element using the locator you already defined above
-            IWebElement qrElement = _driverFlex.FindElement(_qrCodeImageLocator);
+            var wait = new WebDriverWait(_driverFlex, TimeSpan.FromSeconds(10));
+            IWebElement qrElement = wait.Until(d => d.FindElement(_qrCodeImageLocator));
             return GetQrCodeBase64(qrElement);
         }
     }

@@ -150,7 +150,7 @@ public class LoginTests : BaseTest
             }
         finally
         {
-            DriverFactory.Quit();
+           
         }
     }
 }

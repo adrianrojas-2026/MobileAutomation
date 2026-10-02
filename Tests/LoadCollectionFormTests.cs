@@ -29,7 +29,6 @@ namespace RecoveryTrac.AutomatedTests
             }
             catch { /* Suppress non-blocking cleanup errors */ }
 
-            DriverFactory.Quit();
         }
 
         [Test]

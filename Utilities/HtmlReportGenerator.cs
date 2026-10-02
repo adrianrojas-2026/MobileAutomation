@@ -337,8 +337,8 @@ td{
     html.Append("""
     </table>
 
-</body>
-</html>
+    </body>
+    </html>
     """);
         var reportFolder =
             Path.Combine(
