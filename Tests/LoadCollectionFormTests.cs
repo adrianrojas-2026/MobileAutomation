@@ -41,7 +41,7 @@ namespace RecoveryTrac.AutomatedTests
             // -------------------------------------------------------------------------
             // Locating the Forms tab item on the footer bar visible in Image 1 and 2
             var formsTab = _wait.Until(d => {
-            var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Forms'] || //*[@content-desc='Forms']"));
+            var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Forms'] | //*[@content-desc='Forms']"));
                 return (el != null && el.Displayed && el.Enabled) ? el : null;
             });
             formsTab.Click();
@@ -61,14 +61,14 @@ namespace RecoveryTrac.AutomatedTests
             // -------------------------------------------------------------------------
             // Found on the bottom right action bar (Image 3) when current items list is empty
             var newFormButton = _wait.Until(d => {
-            var el = d.FindElement(MobileBy.XPath("//android.widget.Button[@text=' New'] || //android.widget.TextView[@text='New']"));
+            var el = d.FindElement(MobileBy.XPath("//android.widget.Button[@text=' New'] | //android.widget.TextView[@text='New']"));
                 return (el != null && el.Displayed && el.Enabled) ? el : null;
             });
             newFormButton.Click();
 
             // Validate that the verification wizard opened cleanly (Image 4)
             var scanHeaderButton = _wait.Until(d => {
-            var elements = d.FindElements(MobileBy.XPath("//android.widget.TextView[@text='Scan Truck QR Code'] || //android.widget.Button[contains(@text,'Scan')]"));
+            var elements = d.FindElements(MobileBy.XPath("//android.widget.TextView[@text='Scan Truck QR Code'] | //android.widget.Button[contains(@text,'Scan')]"));
                 return elements.Count > 0 && elements[0].Displayed ? elements[0] : null;
             });
             
@@ -106,11 +106,11 @@ namespace RecoveryTrac.AutomatedTests
             Assert.That(successToast.Text, Is.EqualTo("The QR code was scanned successfully, and 4 controls were populated."));
 
             // 2. Locate field elements to assert business telemetry data parsed cleanly
-            var inputDriverNameScan = driver.FindElement(MobileBy.XPath("//android.widget.EditText[@text='PAUL JONES'] || //*[contains(@resource-id, 'DriverNameScan')]"));
-            var inputTruckNumber = driver.FindElement(MobileBy.XPath("//android.widget.EditText[@text='6L82-TV-1000'] || //*[contains(@resource-id, 'TruckNumber')]"));
-            var inputTruckCapacity = driver.FindElement(MobileBy.XPath("//android.widget.EditText[@text='55'] || //*[contains(@resource-id, 'TruckCapacity')]"));
-            var inputTruckDriverName = driver.FindElement(MobileBy.XPath("//android.widget.EditText[@text='PAUL JONES'] || //*[contains(@resource-id, 'TruckDriverName')]"));
-            var inputLicensePlate = driver.FindElement(MobileBy.XPath("//android.widget.EditText[@text='AB1 2CD'] || //*[contains(@resource-id, 'TruckLicensePlate')]"));
+            var inputDriverNameScan = driver.FindElement(MobileBy.XPath("//android.widget.EditText[@text='PAUL JONES'] | //*[contains(@resource-id, 'DriverNameScan')]"));
+            var inputTruckNumber = driver.FindElement(MobileBy.XPath("//android.widget.EditText[@text='6L82-TV-1000'] | //*[contains(@resource-id, 'TruckNumber')]"));
+            var inputTruckCapacity = driver.FindElement(MobileBy.XPath("//android.widget.EditText[@text='55'] | //*[contains(@resource-id, 'TruckCapacity')]"));
+            var inputTruckDriverName = driver.FindElement(MobileBy.XPath("//android.widget.EditText[@text='PAUL JONES'] | //*[contains(@resource-id, 'TruckDriverName')]"));
+            var inputLicensePlate = driver.FindElement(MobileBy.XPath("//android.widget.EditText[@text='AB1 2CD'] | //*[contains(@resource-id, 'TruckLicensePlate')]"));
 
             // 3. Structural Field Assertions
             Assert.Multiple(() =>
@@ -127,7 +127,7 @@ namespace RecoveryTrac.AutomatedTests
             // -------------------------------------------------------------------------
             // Locate and click the dropdown container directly below the "Truck Debris Type" label
             var truckDebrisDropdown = _wait.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Truck Debris Type *']/following-sibling::android.view.ViewGroup[1] || //*[contains(@resource-id, 'TruckDebrisTypeDropdown')]"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Truck Debris Type *']/following-sibling::android.view.ViewGroup[1] | //*[contains(@resource-id, 'TruckDebrisTypeDropdown')]"));
                 return (el != null && el.Displayed) ? el : null;
             });
             truckDebrisDropdown.Click();
@@ -140,7 +140,7 @@ namespace RecoveryTrac.AutomatedTests
             vegetativeOption.Click();
 
             // Click the "Done" action button inside the modal overlay window
-            var modalDoneButton = driver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Done'] || //android.widget.TextView[@text='Done']"));
+            var modalDoneButton = driver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Done'] | //android.widget.TextView[@text='Done']"));
             modalDoneButton.Click();
 
             // -------------------------------------------------------------------------
@@ -148,7 +148,7 @@ namespace RecoveryTrac.AutomatedTests
             // -------------------------------------------------------------------------
             // Scroll down if necessary, locate the trailer dropdown container
             var trailerDebrisDropdown = _wait.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Trailer Debris Type *']/following-sibling::android.view.ViewGroup[1] || //*[contains(@resource-id, 'TrailerDebrisTypeDropdown')]"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Trailer Debris Type *']/following-sibling::android.view.ViewGroup[1] | //*[contains(@resource-id, 'TrailerDebrisTypeDropdown')]"));
                 return (el != null && el.Displayed) ? el : null;
             });
             trailerDebrisDropdown.Click();
@@ -161,7 +161,7 @@ namespace RecoveryTrac.AutomatedTests
             constructionOption.Click();
 
             // Confirm selection via modal Done button again
-            var trailerModalDone = driver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Done'] || //android.widget.TextView[@text='Done']"));
+            var trailerModalDone = driver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Done'] | //android.widget.TextView[@text='Done']"));
             trailerModalDone.Click();
 
             // -------------------------------------------------------------------------
@@ -178,7 +178,7 @@ namespace RecoveryTrac.AutomatedTests
             });
 
             // Tap the Next navigation action button on the bottom right footer bar
-            var nextFormButton = driver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Next'] || //android.widget.TextView[@text='Next']"));
+            var nextFormButton = driver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Next'] | //android.widget.TextView[@text='Next']"));
             nextFormButton.Click();
 
             // -------------------------------------------------------------------------
@@ -193,7 +193,7 @@ namespace RecoveryTrac.AutomatedTests
             // Optional: If your app requires a physical click on the location-refresh icon (top right crosshair icon)
             try
             {
-                var gpsSyncButton = driver.FindElement(MobileBy.XPath("//android.widget.EditText[@text='28.1586965']/following-sibling::android.view.ViewGroup || //android.widget.ImageView[contains(@content-desc, 'location')]"));
+                var gpsSyncButton = driver.FindElement(MobileBy.XPath("//android.widget.EditText[@text='28.1586965']/following-sibling::android.view.ViewGroup | //android.widget.ImageView[contains(@content-desc, 'location')]"));
                 gpsSyncButton.Click();
             }
             catch { /* Suppress if the driver.Location command triggered the sync automatically */ }
@@ -222,13 +222,13 @@ namespace RecoveryTrac.AutomatedTests
             // =========================================================================
             // Locate the 'Yes' option for "Is the above address info correct?" (Image 5 from previous step)
             var radioYesOption = _wait.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Yes'] || //android.widget.CheckedTextView[@text='Yes'] || //*[contains(@content-desc, 'Yes')]"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Yes'] | //android.widget.CheckedTextView[@text='Yes'] | //*[contains(@content-desc, 'Yes')]"));
                 return (el != null && el.Displayed) ? el : null;
             });
             radioYesOption.Click();
 
             // Click the Next button on the bottom footer bar (Context: Location Information screen)
-            var btnNextLocationScreen = driver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Next'] || //android.widget.TextView[@text='Next']"));
+            var btnNextLocationScreen = driver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Next'] | //android.widget.TextView[@text='Next']"));
             btnNextLocationScreen.Click();
 
             // =========================================================================
@@ -236,7 +236,7 @@ namespace RecoveryTrac.AutomatedTests
             // =========================================================================
             // Locate the input box by checking for the placeholder text "Notes & comments..."
             var txtNotesInput = _wait.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.EditText[contains(@text, 'Notes & com')] || //android.widget.EditText[contains(@text, 'Notes & comments')] || //android.widget.EditText"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.EditText[contains(@text, 'Notes & com')] | //android.widget.EditText[contains(@text, 'Notes & comments')] | //android.widget.EditText"));
                 return el != null && el.Displayed ? el : null;
             });
 
@@ -265,7 +265,7 @@ namespace RecoveryTrac.AutomatedTests
 
             // Locate and click the primary 'Submit' action button on the bottom right footer bar
             var btnSubmitTicket = _wait.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.Button[@text='Submit'] || //android.widget.TextView[@text='Submit'] || //*[contains(@content-desc, 'Submit')]"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.Button[@text='Submit'] | //android.widget.TextView[@text='Submit'] | //*[contains(@content-desc, 'Submit')]"));
                 return (el != null && el.Displayed && el.Enabled) ? el : null;
             });
             btnSubmitTicket.Click();
@@ -276,15 +276,15 @@ namespace RecoveryTrac.AutomatedTests
             // =========================================================================
             // Wait for the modal dialog layout to overlay the current view stream cleanly
             var modalTitle = _wait.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Generate QR Code'] || //*[contains(@resource-id, 'alertTitle')]"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Generate QR Code'] | //*[contains(@resource-id, 'alertTitle')]"));
                 return el != null && el.Displayed ? el : null;
             });
 
             // Locate the structural sub-elements inside the alert pop-up frame
             var modalDescription = driver.FindElement(MobileBy.XPath("//android.widget.TextView[contains(@text, 'will finalize it and make it unmodifiable')]"));
-            var checkboxDontShowAgain = driver.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Don\'t show this again'] || //android.widget.CheckBox"));
-            var btnCancel = driver.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Cancel'] || //android.widget.Button[@text='Cancel']"));
-            var btnProceed = driver.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Proceed'] || //android.widget.Button[@text='Proceed']"));
+            var checkboxDontShowAgain = driver.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Don\'t show this again'] | //android.widget.CheckBox"));
+            var btnCancel = driver.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Cancel'] | //android.widget.Button[@text='Cancel']"));
+            var btnProceed = driver.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Proceed'] | //android.widget.Button[@text='Proceed']"));
 
             // Aggregate validation block ensuring copy consistency and button layout presence
             Assert.Multiple(() =>
@@ -323,7 +323,7 @@ namespace RecoveryTrac.AutomatedTests
 
             // --- STEP 3: Navigate the Driver App to its Scanning Screen ---
             var btnDriverScanTicket = waitDriver.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.Button[contains(@text, 'Scan Ticket')] || //android.widget.TextView[@text='Scan Ticket']"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.Button[contains(@text, 'Scan Ticket')] | //android.widget.TextView[@text='Scan Ticket']"));
                 return (el != null && el.Displayed) ? el : null;
             });
             btnDriverScanTicket.Click();
@@ -336,7 +336,7 @@ namespace RecoveryTrac.AutomatedTests
             // --- STEP 5: Assertions on the Driver App (Disposal Workflow Activation) ---
             // Wait for the Driver App to process the ticket code and transition to the map/disposal view
             var lblDisposalHeader = waitDriver.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[contains(@text, 'Proceed to Disposal Site')] || //android.widget.TextView[contains(@text, 'Disposal')]"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[contains(@text, 'Proceed to Disposal Site')] | //android.widget.TextView[contains(@text, 'Disposal')]"));
                 return el != null && el.Displayed ? el : null;
             });
 
@@ -346,7 +346,7 @@ namespace RecoveryTrac.AutomatedTests
                     "Driver App failed to transition into disposal navigation routing after scanning the ticket.");
                 
                 // Assert any inline truck metadata shown on the driver screen matches the ticket entries
-                var txtTargetRoute = driverDriver.FindElement(MobileBy.XPath("//android.widget.TextView[contains(@text, 'Lucien Way')] || //android.widget.TextView[contains(@text, 'Polk City')]"));
+                var txtTargetRoute = driverDriver.FindElement(MobileBy.XPath("//android.widget.TextView[contains(@text, 'Lucien Way')] | //android.widget.TextView[contains(@text, 'Polk City')]"));
                 Assert.That(txtTargetRoute.Displayed, Is.True, "Disposal routing instructions are missing from driver viewport.");
             });
 

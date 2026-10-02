@@ -51,7 +51,7 @@ namespace RecoveryTrac.AutomatedTests
             // STEP 1: Tap on Forms Option (Bottom Navigation Bar)
             // =========================================================================
             var formsTab = wf.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Forms'] || //*[@content-desc='Forms']"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Forms'] ! //*[@content-desc='Forms']"));
                 return (el != null && el.Displayed) ? el : null;
             });
             formsTab.Click();
@@ -69,7 +69,7 @@ namespace RecoveryTrac.AutomatedTests
             // STEP 3: Click/Tap "New" Option Button
             // =========================================================================
             var btnNewDisposal = wf.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.Button[@text=' New'] || //android.widget.TextView[@text='New']"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.Button[@text=' New'] | //android.widget.TextView[@text='New']"));
                 return (el != null && el.Displayed) ? el : null;
             });
             btnNewDisposal.Click();
@@ -78,20 +78,20 @@ namespace RecoveryTrac.AutomatedTests
             // STEP 4: Select Disposal Site & Tap Next
             // =========================================================================
             var dropdownDisposalSite = wf.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Disposal Site *']/following-sibling::android.view.ViewGroup || //android.widget.EditText[contains(@text, 'LANDFILL')]"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Disposal Site *']/following-sibling::android.view.ViewGroup | //android.widget.EditText[contains(@text, 'LANDFILL')]"));
                 return el != null && el.Displayed ? el : null;
             });
 
             Assert.That(dropdownDisposalSite.Text, Is.EqualTo("ORANGE COUNTY LANDFILL"), "Disposal site pre-selected value mismatch.");
 
-            var btnNextImportData = flexDriver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Next'] || //android.widget.TextView[@text='Next']"));
+            var btnNextImportData = flexDriver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Next'] | //android.widget.TextView[@text='Next']"));
             btnNextImportData.Click();
 
             // =========================================================================
             // STEP 5: Select "Having trouble scanning" to open Ticket fallback
             // =========================================================================
             var radioTroubleScanning = wf.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='having trouble scanning']/following-sibling::android.view.ViewGroup || //android.widget.TextView[@text='having trouble scanning']"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.TextView[@text='having trouble scanning']/following-sibling::android.view.ViewGroup | //android.widget.TextView[@text='having trouble scanning']"));
                 return el != null && el.Displayed ? el : null;
             });
             radioTroubleScanning.Click();
@@ -116,7 +116,7 @@ namespace RecoveryTrac.AutomatedTests
 
             string currentTicketQrBase64 = driverPage.GetOnlyQrCodeAsBase64();
 
-            var btnScanDriversQr = flexDriver.FindElement(MobileBy.XPath("//android.widget.Button[contains(@text,'Scan the driver')] || //android.widget.TextView[contains(@text,'Scan')]"));
+            var btnScanDriversQr = flexDriver.FindElement(MobileBy.XPath("//android.widget.Button[contains(@text,'Scan the driver')] | //android.widget.TextView[contains(@text,'Scan')]"));
             btnScanDriversQr.Click();
 
             var injectionArgs = new Dictionary<string, object> { { "payload", currentTicketQrBase64 } };
@@ -126,7 +126,7 @@ namespace RecoveryTrac.AutomatedTests
             // STEP 7: Confirm Autofilled Fields & Fill Truck Measurements
             // =========================================================================
             var btnNextTruckContainer = wf.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.Button[@text='Next'] || //android.widget.TextView[@text='Next']"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.Button[@text='Next'] | //android.widget.TextView[@text='Next']"));
                 return (el != null && el.Displayed) ? el : null;
             });
             btnNextTruckContainer.Click();
@@ -143,7 +143,7 @@ namespace RecoveryTrac.AutomatedTests
             var radioCapacityCorrectYes = flexDriver.FindElement(MobileBy.XPath("//android.widget.TextView[@text='Yes']"));
             radioCapacityCorrectYes.Click();
 
-            var txtLoadCallPercent = flexDriver.FindElement(MobileBy.XPath("//android.widget.EditText[contains(@resource-id, 'loadCall')] || //android.widget.EditText[@text='']"));
+            var txtLoadCallPercent = flexDriver.FindElement(MobileBy.XPath("//android.widget.EditText[contains(@resource-id, 'loadCall')] | //android.widget.EditText[@text='']"));
             txtLoadCallPercent.Click();
             txtLoadCallPercent.SendKeys("75");
 
@@ -152,7 +152,7 @@ namespace RecoveryTrac.AutomatedTests
             // =========================================================================
             // STEP 8: Once Submit / Finalize Form
             // =========================================================================
-            var btnSubmitDisposalForm = flexDriver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Submit'] || //android.widget.TextView[@text='Submit']"));
+            var btnSubmitDisposalForm = flexDriver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Submit'] | //android.widget.TextView[@text='Submit']"));
             btnSubmitDisposalForm.Click();
             Console.WriteLine("Load Disposal Form successfully compiled, synchronized cross-app, and submitted.");
 
@@ -164,7 +164,7 @@ namespace RecoveryTrac.AutomatedTests
                 return el != null && el.Displayed ? el : null;
             });
 
-            var btnProceed = flexDriver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Proceed'] || //android.widget.TextView[@text='Proceed']"));
+            var btnProceed = flexDriver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Proceed'] | //android.widget.TextView[@text='Proceed']"));
             btnProceed.Click();
 
              // =========================================================================
@@ -177,13 +177,13 @@ namespace RecoveryTrac.AutomatedTests
             });
 
             // 2. Capture ONLY the bounding box of the QR image natively on the Appium server (0 platform warnings)
-            var qrElement = flexDriver.FindElement(MobileBy.XPath("//android.widget.ImageView || //*[contains(@resource-id, 'img_receipt_qr')]"));
+            var qrElement = flexDriver.FindElement(MobileBy.XPath("//android.widget.ImageView | //*[contains(@resource-id, 'img_receipt_qr')]"));
             var qrScreenshot = ((ITakesScreenshot)qrElement).GetScreenshot();
             string receiptQrBase64 = qrScreenshot.AsBase64EncodedString;
 
             // 3. Switch context to Driver App and tap the 'Scan Receipt' navigation box
             var btnDriverScanReceipt = wd.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.Button[contains(@text, 'Scan Receipt')] || //android.widget.TextView[@text='Scan Receipt']"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.Button[contains(@text, 'Scan Receipt')] | //android.widget.TextView[@text='Scan Receipt']"));
                 return (el != null && el.Displayed) ? el : null;
             });
             btnDriverScanReceipt.Click();
@@ -193,7 +193,7 @@ namespace RecoveryTrac.AutomatedTests
             var cameraArgs = new Dictionary<string, object> { { "payload", receiptQrBase64 } };
             driverDriver.ExecuteScript("mobile: injectEmulatorCameraImage", cameraArgs);
             // 5. Dismiss the modal card overlay on the Flex supervisor screen to view the dashboard list
-            var btnCloseReceiptView = flexDriver.FindElement(MobileBy.XPath("//android.widget.TextView[@text='✕'] || //android.widget.Button[contains(@text, 'Close')] || //android.widget.ImageView[contains(@content-desc, 'close')]"));
+            var btnCloseReceiptView = flexDriver.FindElement(MobileBy.XPath("//android.widget.TextView[@text='✕'] | //android.widget.Button[contains(@text, 'Close')] | //android.widget.ImageView[contains(@content-desc, 'close')]"));
             btnCloseReceiptView.Click();
 
             // =========================================================================
