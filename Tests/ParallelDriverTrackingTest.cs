@@ -5,6 +5,7 @@ namespace MobileAutomation.Tests.Scenarios;
 // 💡 This instructs NUnit to run two instances of this test class in parallel
 [TestFixture("Grid_Node1_Driver", "driver")]
 [TestFixture("Grid_Node1_Flex", "flex")]
+[Parallelizable(ParallelScope.Self)] // 🚀 Ensures these two fixtures run concurrently
 public class ParallelDriverTrackingTests
 {
     private readonly string _targetDevice;
@@ -38,6 +39,27 @@ public class ParallelDriverTrackingTests
     [TearDown]
     public void Teardown()
     {
-        DriverFactory.Quit();
+        Console.WriteLine($"[Teardown] Gracefully force-closing {_targetApp} application from device memory...");
+        try
+        {
+            // 🟢 Force-close the app from the emulator RAM before dropping the driver connection
+            if (DriverFactory.Driver != null)
+            {
+                string targetPackage = string.Equals(_targetApp, "driver", StringComparison.OrdinalIgnoreCase)
+                    ? "com.tetratech.recoverytracdriver"
+                    : "com.tetratech.recoverytracflex";
+
+                DriverFactory.AndroidDriver.TerminateApp(targetPackage);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Non-blocking cleanup notification: {ex.Message}");
+        }
+        finally
+        {
+            // 🟢 Clean the ThreadLocal allocation context handles to prevent memory bloat
+            DriverFactory.Quit();
+        }
     }
 }
