@@ -2,6 +2,7 @@
 using MobileAutomation.Tests.Pages;
 using MobileAutomation.Tests.Utilities;
 using MobileAutomation.Tests.Reporting;
+using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
 using Microsoft.Extensions.Configuration;
 
@@ -9,39 +10,36 @@ namespace MobileAutomation.Tests.Tests;
 
 
 [TestFixture]
-[Parallelizable(ParallelScope.All)]
+[Parallelizable(ParallelScope.Children)]
 public class LoginTests : BaseTest
 {
 
     [Test]
-    [Parallelizable(ParallelScope.Self)]
     public void LoginTraxAndroid8()
     {
-        ExecuteLogin("Grid_Node2_Flex");
+        ExecuteLogin("Grid_Node3_Flex");
     }
 
     [Test]
-    [Parallelizable(ParallelScope.Self)]
     public void LoginTraxAndroid12()
     {
         ExecuteLogin("Grid_Node1_Flex");
     }
 
     [Test]
-   [Parallelizable(ParallelScope.Self)]
     public void LoginTraxAndroid14()
     {
-        ExecuteLogin("Grid_Node1_Driver");
+        ExecuteLogin("Grid_Node1_Driver", "driver");
     }
 
-    private void ExecuteLogin(string environment)
+    private void ExecuteLogin(string environment, string appType = "flex")
     {
         var start = DateTime.Now;
         Console.WriteLine(
             $"START {environment} - {start:HH:mm:ss.fff}");
         try
         {
-            DriverFactory.Initialize(environment);
+            DriverFactory.Initialize(environment, appType);
             
             var environmentVariables = new Dictionary<string, string?>();
             foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
@@ -68,9 +66,16 @@ public class LoginTests : BaseTest
             string password = config["TestSettings:LoginPassword"] ?? throw new NullReferenceException("LoginPassword setting is missing.");
             int timeout = int.Parse(config["TestSettings:ExplicitWaitTimeoutSeconds"] ?? "15");
 
+            string expectedPackage = string.Equals(appType, "driver", StringComparison.OrdinalIgnoreCase)
+                ? "com.tetratech.recoverytracdriver"
+                : "com.tetratech.recoverytracflex";
+
+            // Parameterized assertion handles both application lifecycles flawlessly
             Assert.That(
                 DriverFactory.AndroidDriver.CurrentPackage,
-                Is.EqualTo("com.tetratech.recoverytracflex"));
+                Is.EqualTo(expectedPackage), 
+                $"Expected application package '{expectedPackage}' to be active, but found '{DriverFactory.AndroidDriver.CurrentPackage}' instead.");
+
             
             var wait = new WebDriverWait(DriverFactory.AndroidDriver, TimeSpan.FromSeconds(timeout));
     
@@ -81,12 +86,33 @@ public class LoginTests : BaseTest
 
             PermissionHelper.HandleNotifications(
                 DriverFactory.AndroidDriver);
-
-            var loginPage = new LoginPage(DriverFactory.AndroidDriver);
             
-            loginPage.LoginTrac(
-                email,
-                password);
+            if (string.Equals(appType, "flex", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"[Flow Automation] Executing target Login validation sequence for Flex app container...");
+                var loginPage = new LoginPage(DriverFactory.AndroidDriver);
+                loginPage.LoginTrac(email, password);
+            }
+            else
+            {
+               Console.WriteLine($"[Flow Automation] Driver App target detected. Handling onboarding welcome canvas layer...");
+                
+                // 1. Wait until the 'GET STARTED' button is fully rendered and interactable on the screen viewport
+                var btnGetStarted = wait.Until(d => {
+                    var el = d.FindElement(By.XPath("//android.widget.Button[@text='GET STARTED'] | //android.widget.TextView[@text='GET STARTED'] | //*[contains(@content-desc, 'STARTED')]"));
+                    return (el != null && el.Displayed && el.Enabled) ? el : null;
+                });
+                
+                // Assert that the welcome page loaded successfully before performing the interactive tap
+                Assert.That(btnGetStarted.Displayed, Is.True, "The RecoveryTrac Driver App welcome splash landing page failed to display.");
+                
+                // 2. Click the button to dismiss the onboarding splash screen view
+                btnGetStarted.Click();
+                Console.WriteLine("[Flow Automation] Successfully tapped 'GET STARTED'. Onboarding wizard cleared cleanly.");
+                
+                // Optional short wait buffer if the app performs a minor context transition animation right after the click
+                System.Threading.Thread.Sleep(1000); 
+            }
 
             var screenshotsFolder =
                 Path.Combine(

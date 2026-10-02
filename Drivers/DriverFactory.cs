@@ -98,6 +98,18 @@ public static class DriverFactory
         options.AddAdditionalAppiumOption("appium:autoGrantPermissions", bool.Parse(appiumSection["AutoGrantPermissions"]!));
         options.AddAdditionalAppiumOption("appium:chromedriverAutodownload", bool.Parse(appiumSection["ChromedriverAutodownload"]!));
 
+        var noResetStr = appiumSection["noReset"];
+        if (!string.IsNullOrWhiteSpace(noResetStr))
+        {
+            options.AddAdditionalAppiumOption("appium:noReset", bool.Parse(noResetStr));
+        }
+
+        var dontStopAppStr = appiumSection["dontStopAppOnReset"];
+        if (!string.IsNullOrWhiteSpace(dontStopAppStr))
+        {
+            options.AddAdditionalAppiumOption("appium:dontStopAppOnReset", bool.Parse(dontStopAppStr));
+        }
+
         if (string.Equals(options.PlatformName, "Android", StringComparison.OrdinalIgnoreCase))
         {
             // 💡 DYNAMIC APP TARGETING LOGIC
