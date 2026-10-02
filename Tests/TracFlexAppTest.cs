@@ -20,6 +20,15 @@ namespace RecoveryTracTests
             // Appium Server 2.x
             Uri appiumServerUri = new Uri("http://127.0.0.1:4723/");
 
+            // 🟢 Dynamic cross-platform absolute path locator
+            string appPath = Path.Combine(AppContext.BaseDirectory, "Apps", "recovery_trac_flex.apk");
+
+            // Defensive check to surface clean debugging logs early if files are missing from the compiler output
+            if (!File.Exists(appPath))
+            {
+                throw new FileNotFoundException($"The target mobile binary package could not be resolved at execution path: {appPath}");
+            }
+
             // --- Configuration for RECOVERY TRAC FLEX ---
             var optionsFlex = new AppiumOptions();
             optionsFlex.PlatformName = "Android";
@@ -27,7 +36,7 @@ namespace RecoveryTracTests
             
             optionsFlex.AddAdditionalAppiumOption("appium:deviceName", "Emulador_Flex_5554");
             optionsFlex.AddAdditionalAppiumOption("appium:udid", "emulator-5554"); // ID from 'adb devices'
-            optionsFlex.AddAdditionalAppiumOption("appium:app", @"C:\apks\recovery_trac_flex.apk");
+            optionsFlex.AddAdditionalAppiumOption("appium:app", appPath);
             optionsFlex.AddAdditionalAppiumOption("appium:systemPort", 8201);
 
             // Correct Assignation: Here set the real value to the first ThreadLocal
@@ -40,7 +49,7 @@ namespace RecoveryTracTests
 
             optionsDriver.AddAdditionalAppiumOption("appium:deviceName", "Emulador_Flex_5556");
             optionsDriver.AddAdditionalAppiumOption("appium:udid", "emulator-5556"); // ID from 'adb devices'
-            optionsDriver.AddAdditionalAppiumOption("appium:app", @"C:\apks\recovery_trac_driver.apk");
+            optionsDriver.AddAdditionalAppiumOption("appium:app", appPath);
             optionsDriver.AddAdditionalAppiumOption("appium:systemPort", 8202); 
             
             // Correct Assignation: Here set the real value to the second ThreadLocal

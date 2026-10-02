@@ -34,7 +34,7 @@ namespace RecoveryTrac.AutomatedTests
             }
             catch { /* Suppress non-blocking cleanup errors */ }
 
-            DriverFactory.Quit();
+            // Quit() handled by BaseTest.Cleanup()
         }
 
         // 🚀 NEW: Clears thread-static allocations immediately after this class finishes executing

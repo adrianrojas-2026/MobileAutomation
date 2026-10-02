@@ -44,4 +44,12 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+  <!-- Ensures the application installer files are carried along cleanly into the target pipeline runtime folder -->
+  <None Update="Apps\**\*">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  </None>
+</ItemGroup>
+
+
 </Project>

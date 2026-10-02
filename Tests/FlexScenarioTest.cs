@@ -21,9 +21,8 @@ namespace MobileAutomation.Tests.Tests
         {
             Console.WriteLine("[Cleanup] Terminating dual drivers and releasing the leased emulator pair back to the pool...");
             // Crucial: Frees up the leased emulators so the next parallel class can immediately use them
-            DriverFactory.Quit();
+            // Quit() handled by BaseTest.Cleanup()
         }
-
         
         [Test]
         public void TestAsignacionDeServicioE2E()
