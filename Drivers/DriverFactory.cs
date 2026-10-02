@@ -131,7 +131,7 @@ public static class DriverFactory
         }
     }
     
-    public static void InitializeDualApps(string environmentFlex, string environmentDriver)
+    public static void InitializeDualApps(string environmentFlex = "Grid_Node1_Flex", string environmentDriver = "Grid_Node1_Driver")
     {
         IConfiguration config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
@@ -232,5 +232,6 @@ public static class DriverFactory
         } 
         catch { /* Suppress runtime loop faults */ }
         _driverDriver.Value = null!;
+
     }
 }

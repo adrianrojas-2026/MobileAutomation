@@ -16,7 +16,7 @@ namespace RecoveryTrac.AutomatedTests
         public void SetupFormScenario()
         {
             // Initializes the single RecoveryTrac Flex App instance
-            DriverFactory.Initialize("Android_Flex", "flex");
+            DriverFactory.InitializeDualApps();
             _wait.Value = new WebDriverWait(DriverFactory.DriverFlex, TimeSpan.FromSeconds(15));
             _waitDriver.Value = new WebDriverWait(DriverFactory.DriverDriver, TimeSpan.FromSeconds(15));
         }

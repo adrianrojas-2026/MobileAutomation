@@ -5,6 +5,7 @@ using MobileAutomation.Tests.Pages.FlexApp;
 namespace MobileAutomation.Tests.Tests
 {
     [TestFixture]
+    [Parallelizable(ParallelScope.Self)]
     public class FlexScenarioTest : BaseTest
     {
         [SetUp]
@@ -12,8 +13,17 @@ namespace MobileAutomation.Tests.Tests
         {
             // Send two environments configured in your appsettings.json 
             // (Example: One pointing to emulator 5554 and the other to 5556)
-            DriverFactory.InitializeDualApps("Android_Flex", "Android_Driver");
+            DriverFactory.InitializeDualApps();
         }
+
+        [TearDown]
+        public void FinalizarEscenarioDual()
+        {
+            Console.WriteLine("[Cleanup] Terminating dual drivers and releasing the leased emulator pair back to the pool...");
+            // Crucial: Frees up the leased emulators so the next parallel class can immediately use them
+            DriverFactory.Quit();
+        }
+
         
         [Test]
         public void TestAsignacionDeServicioE2E()

@@ -18,7 +18,7 @@ namespace RecoveryTrac.AutomatedTests
         public void SetupDisposalScenario()
         {
             // Initializes dual sessions concurrently to handle the cross-app verification flow
-            DriverFactory.InitializeDualApps("Android_Flex", "Android_Driver");
+            DriverFactory.InitializeDualApps();
             
             _waitFlex.Value = new WebDriverWait(DriverFactory.DriverFlex, TimeSpan.FromSeconds(15));
             _waitDriver.Value = new WebDriverWait(DriverFactory.DriverDriver, TimeSpan.FromSeconds(15));

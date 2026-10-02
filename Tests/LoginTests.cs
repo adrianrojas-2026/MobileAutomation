@@ -1,7 +1,6 @@
 ﻿using MobileAutomation.Tests.Drivers;
 using MobileAutomation.Tests.Pages;
 using MobileAutomation.Tests.Utilities;
-using OpenQA.Selenium.Support.UI;
 using MobileAutomation.Tests.Reporting;
 
 namespace MobileAutomation.Tests.Tests;
@@ -16,21 +15,21 @@ public class LoginTests : BaseTest
     [Parallelizable(ParallelScope.Self)]
     public void LoginTraxAndroid8()
     {
-        ExecuteLogin("Android8");
+        ExecuteLogin("Grid_Node2_Flex");
     }
 
     [Test]
     [Parallelizable(ParallelScope.Self)]
     public void LoginTraxAndroid12()
     {
-        ExecuteLogin("Android12");
+        ExecuteLogin("Grid_Node1_Flex");
     }
 
     [Test]
    [Parallelizable(ParallelScope.Self)]
     public void LoginTraxAndroid14()
     {
-        ExecuteLogin("Android14");
+        ExecuteLogin("Grid_Node1_Driver");
     }
 
     private void ExecuteLogin(string environment)
