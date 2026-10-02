@@ -7,6 +7,7 @@ namespace MobileAutomation.Tests.Drivers;
 
 public static class DriverFactory
 {
+    private static readonly ThreadLocal<Tuple<string, string>?> _leasedNode = new();
     private static ThreadLocal<AppiumDriver> _driver = new();
     public static AppiumDriver Driver => _driver.Value!;
     public static AndroidDriver AndroidDriver => (AndroidDriver)Driver;
@@ -133,6 +134,15 @@ public static class DriverFactory
     
     public static void InitializeDualApps(string environmentFlex = "Grid_Node1_Flex", string environmentDriver = "Grid_Node1_Driver")
     {
+        // Lease an available node pair from the pool
+        if (!_availableNodesPool.TryDequeue(out var node))
+            throw new InvalidOperationException(
+                "No emulator node pairs available. All grid nodes are in use.");
+
+        _leasedNode.Value = node;
+        environmentFlex = node.Item1;
+        environmentDriver = node.Item2;
+
         IConfiguration config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("Config/appsettings.json", optional: false, reloadOnChange: false)
@@ -209,6 +219,13 @@ public static class DriverFactory
 
     public static void Quit()
     {
+        // Return leased node back to the pool so next test class can use it
+        if (_leasedNode.Value != null)
+        {
+            _availableNodesPool.Enqueue(_leasedNode.Value);
+            _leasedNode.Value = null;
+        }
+
         // 1. Clean Base Driver
         try
         {

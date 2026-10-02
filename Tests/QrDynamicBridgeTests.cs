@@ -15,7 +15,7 @@ namespace RecoveryTrac.AutomatedTests
         {
             // Send two environments configured in your appsettings.json 
             // (Example: One pointing to emulator 5554 and the other to 5556)
-            DriverFactory.InitializeDualApps("Android_Flex", "Android_Driver");
+            DriverFactory.InitializeDualApps("Grid_Node1_Flex", "Grid_Node1_Driver");
             Console.WriteLine("Clearing native OS permission blocks on Driver App...");
             PermissionHelper.HandleSystemPermissions(DriverFactory.DriverDriver);
 
