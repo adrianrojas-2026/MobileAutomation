@@ -82,7 +82,7 @@ namespace RecoveryTrac.AutomatedTests
             // STEP 3: Tap on the "New" Button
             // -------------------------------------------------------------------------
             var newFormButton = wf.Until(d => {
-                var el = d.FindElement(MobileBy.XPath("//android.widget.Button[@text=' New'] | //android.widget.TextView[@text='New']"));
+                var el = d.FindElement(MobileBy.XPath("//android.widget.Button[@text='New'] | //android.widget.TextView[@text='New']"));
                 return (el != null && el.Displayed && el.Enabled) ? el : null;
             });
             newFormButton.Click();
@@ -120,6 +120,53 @@ namespace RecoveryTrac.AutomatedTests
             Assert.That(inputTruckNumber.Text, Is.Not.Null.Or.Empty);
 
             // -------------------------------------------------------------------------
+            // STEP 5b: Assert In-Progress Page Header
+            // -------------------------------------------------------------------------
+            var inProgressHeader = wf.Until(d => {
+                var el = d.FindElement(MobileBy.XPath(
+                    "//android.widget.TextView[contains(@text, \"In Progress\") and contains(@text, \"Load - Collection\")]"));
+                return el != null && el.Displayed ? el : null;
+            });
+            Assert.That(inProgressHeader.Text, Contains.Substring("Load - Collection"));
+
+            // -------------------------------------------------------------------------
+            // STEP 5c: Assert QR-Populated Fields (Driver Name, Capacity, License Plate)
+            // -------------------------------------------------------------------------
+            var inputDriverName     = driver.FindElement(MobileBy.XPath("//android.widget.EditText[contains(@resource-id, 'DriverName') or contains(@content-desc, 'Driver Name')]"));
+            var inputTruckCapacity  = driver.FindElement(MobileBy.XPath("//android.widget.EditText[contains(@resource-id, 'TruckCapacity') or contains(@content-desc, 'Truck Capacity')]"));
+            var inputTruckDriverName= driver.FindElement(MobileBy.XPath("//android.widget.EditText[contains(@resource-id, 'TruckDriverName') or contains(@content-desc, 'Truck Driver Name')]"));
+            var inputLicensePlate   = driver.FindElement(MobileBy.XPath("//android.widget.EditText[contains(@resource-id, 'LicensePlate') or contains(@content-desc, 'License Plate')]"));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(inputDriverName.Text,      Is.Not.Null.And.Not.Empty, "Driver Name was not populated by QR scan.");
+                Assert.That(inputTruckCapacity.Text,   Is.Not.Null.And.Not.Empty, "Truck Capacity was not populated by QR scan.");
+                Assert.That(inputTruckDriverName.Text, Is.Not.Null.And.Not.Empty, "Truck Driver Name was not populated by QR scan.");
+                Assert.That(inputLicensePlate.Text,    Is.Not.Null.And.Not.Empty, "Truck License Plate was not populated by QR scan.");
+            });
+
+            // -------------------------------------------------------------------------
+            // STEP 5d: Answer "Is Driver Name correct?" → Yes
+            // -------------------------------------------------------------------------
+            var isDriverNameCorrectYes = wf.Until(d => {
+                // Target the Yes radio within the "Is Driver Name correct?" group
+                var el = d.FindElement(MobileBy.XPath(
+                    "//*[contains(@text, 'Is Driver Name correct')]/following-sibling::*//*[@text='Yes' or @content-desc='Yes']"));
+                return (el != null && el.Displayed && el.Enabled) ? el : null;
+            });
+            isDriverNameCorrectYes.Click();
+
+            // -------------------------------------------------------------------------
+            // STEP 5e: Answer "Is the above information correct?" → Yes
+            // -------------------------------------------------------------------------
+            var isInfoCorrectYes = wf.Until(d => {
+                var el = d.FindElement(MobileBy.XPath(
+                    "//*[contains(@text, 'Is the above information correct')]/following-sibling::*//*[@text='Yes' or @content-desc='Yes']"));
+                return (el != null && el.Displayed && el.Enabled) ? el : null;
+            });
+            isInfoCorrectYes.Click();
+
+            // -------------------------------------------------------------------------
             // STEP 6: Interactive Field Selections: Truck Debris Type
             // -------------------------------------------------------------------------
             var truckDebrisDropdown = wf.Until(d => {
@@ -135,6 +182,7 @@ namespace RecoveryTrac.AutomatedTests
             vegetativeOption.Click();
 
             var modalDoneButton = driver.FindElement(MobileBy.XPath("//android.widget.Button[@text='Done'] | //android.widget.TextView[@text='Done']"));
+            wf.Until(d => modalDoneButton.Enabled && modalDoneButton.Displayed);
             modalDoneButton.Click();
 
             // -------------------------------------------------------------------------
