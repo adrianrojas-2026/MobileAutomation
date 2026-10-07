@@ -167,7 +167,7 @@ public static class DriverFactory
         if (!config.GetSection($"MobileConfigurations:{environmentDriver}").Exists()) throw new ArgumentException("Invalid environment specified for Driver app.");
         // 1. INICIALIZAR RECOVERY TRAC FLEX
         var envFlexSection = config.GetSection($"MobileConfigurations:{environmentFlex}");
-        var optionsFlex = ConfigureOptions(appiumSection, envFlexSection, "f");
+        var optionsFlex = ConfigureOptions(appiumSection, envFlexSection, "flex");
         _driverFlex.Value = new AndroidDriver(new Uri(serverUrl), optionsFlex);
 
         // 2. INICIALIZAR RECOVERY TRAC DRIVER
