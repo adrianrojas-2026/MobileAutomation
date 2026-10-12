@@ -62,7 +62,9 @@ public class LoginTests : BaseTest
                 .Build();
 
             //string email = config["TestSettings:LoginEmail"] ?? throw new NullReferenceException("LoginEmail setting is missing.");
+            //Username: Flex.testuser1@tetratech.com
             //string password = config["TestSettings:LoginPassword"] ?? throw new NullReferenceException("LoginPassword setting is missing.");
+            //Password: 3Puser1abc$
 
             string email = await KeyVaultAccessClient.GetKeyVaultSecretAsync(
                 config["TestSettings:flexLoginEmail"] ?? throw new NullReferenceException("LoginEmail setting is missing."), 
