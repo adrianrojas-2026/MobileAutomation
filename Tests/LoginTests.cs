@@ -16,7 +16,13 @@ public class LoginTests : BaseTest
     [Test]
     public async Task LoginTraxAndroid8()
     {
-        await ExecuteLogin("Grid_Node3_Flex");
+        await ExecuteLogin("Grid_Node2_Flex");
+    }
+    
+    [Test]
+    public async Task LoginTraxAndroid11()
+    {
+        await ExecuteLogin("Grid_Node2_Driver");
     }
 
     [Test]
@@ -61,18 +67,18 @@ public class LoginTests : BaseTest
                 .AddInMemoryCollection(environmentVariables)
                 .Build();
 
-            //string email = config["TestSettings:LoginEmail"] ?? throw new NullReferenceException("LoginEmail setting is missing.");
+            string email = config["TestSettings:LoginEmail"] ?? throw new NullReferenceException("LoginEmail setting is missing.");
             //Username: Flex.testuser1@tetratech.com
-            //string password = config["TestSettings:LoginPassword"] ?? throw new NullReferenceException("LoginPassword setting is missing.");
+            string password = config["TestSettings:LoginPassword"] ?? throw new NullReferenceException("LoginPassword setting is missing.");
             //Password: 3Puser1abc$
 
-            string email = await KeyVaultAccessClient.GetKeyVaultSecretAsync(
-                config["TestSettings:flexLoginEmail"] ?? throw new NullReferenceException("LoginEmail setting is missing."), 
-                config["TestSettings:KeyVaultName"] ?? throw new NullReferenceException("KeyVaultName setting is missing."));
+            // string email = await KeyVaultAccessClient.GetKeyVaultSecretAsync(
+            //     config["TestSettings:flexLoginEmail"] ?? throw new NullReferenceException("LoginEmail setting is missing."), 
+            //     config["TestSettings:KeyVaultName"] ?? throw new NullReferenceException("KeyVaultName setting is missing."));
 
-            string password = await KeyVaultAccessClient.GetKeyVaultSecretAsync(
-                config["TestSettings:flexLoginPassword"] ?? throw new NullReferenceException("LoginPassword setting is missing."), 
-                config["TestSettings:KeyVaultName"] ?? throw new NullReferenceException("KeyVaultName setting is missing."));
+            // string password = await KeyVaultAccessClient.GetKeyVaultSecretAsync(
+            //     config["TestSettings:flexLoginPassword"] ?? throw new NullReferenceException("LoginPassword setting is missing."), 
+            //     config["TestSettings:KeyVaultName"] ?? throw new NullReferenceException("KeyVaultName setting is missing."));
 
             int timeout = int.Parse(config["TestSettings:ExplicitWaitTimeoutSeconds"] ?? "15");
 
