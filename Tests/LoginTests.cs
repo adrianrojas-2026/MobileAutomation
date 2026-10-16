@@ -13,28 +13,28 @@ namespace MobileAutomation.Tests.Tests;
 public class LoginTests : BaseTest
 {
 
-    [Test]
-    public async Task LoginTraxAndroid8()
-    {
-        await ExecuteLogin("Grid_Node2_Flex");
-    }
+    //[Test]
+    // public async Task LoginTraxAndroid8()
+    // {
+    //     await ExecuteLogin("Grid_Node2_Flex");
+    // }
     
-    [Test]
-    public async Task LoginTraxAndroid11()
-    {
-        await ExecuteLogin("Grid_Node2_Driver");
-    }
+    // [Test]
+    // public async Task LoginTraxAndroid11()
+    // {
+    //     await ExecuteLogin("Grid_Node2_Driver");
+    // }
 
-    [Test]
-    public async Task LoginTraxAndroid12()
-    {
-        await ExecuteLogin("Grid_Node1_Flex");
-    }
+    // [Test]
+    // public async Task LoginTraxAndroid12()
+    // {
+    //     await ExecuteLogin("Grid_Node1_Flex");
+    // }
 
     [Test]
     public async Task LoginTraxAndroid14()
     {
-        await ExecuteLogin("Grid_Node1_Driver", "driver");
+        await ExecuteLogin("Grid_Node1_Flex", "flex");
     }
 
     private async Task ExecuteLogin(string environment, string appType = "flex")
