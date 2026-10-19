@@ -4,6 +4,7 @@ using MobileAutomation.Tests.Tests;
 using MobileAutomation.Tests.Pages.Driver;
 using OpenQA.Selenium.Appium;
 using OpenQA.Selenium.Support.UI;
+using OpenQA.Selenium.Appium.Android;
 
 namespace RecoveryTrac.AutomatedTests
 {
@@ -45,8 +46,13 @@ namespace RecoveryTrac.AutomatedTests
         {
             try
             {
-                var clearArgs = new Dictionary<string, object> { { "payload", "" } };
-                DriverFactory.DriverFlex.ExecuteScript("mobile: injectEmulatorCameraImage", clearArgs);
+                // 💡 Safely type check that the driver supports script execution prior to invoking emulated hardware parameters
+                if (DriverFactory.DriverFlex is IJavaScriptExecutor jsExecutor)
+                {
+                    var clearArgs = new Dictionary<string, object> { { "payload", "" } };
+                    jsExecutor.ExecuteScript("mobile: injectEmulatorCameraImage", clearArgs);
+                }
+
             }
             catch { /* Suppress non-blocking cleanup errors */ }
         }
@@ -172,8 +178,11 @@ namespace RecoveryTrac.AutomatedTests
                 "//android.widget.Button[contains(@text,'Scan the driver')] | //android.widget.TextView[contains(@text,'Scan')]"));
             scanBtn.Click();
 
-            flex.ExecuteScript("mobile: injectEmulatorCameraImage",
-                new Dictionary<string, object> { { "payload", qrBase64 } });
+            if (flex is IJavaScriptExecutor jsExecutor)
+            {
+                jsExecutor.ExecuteScript("mobile: injectEmulatorCameraImage",
+                    new Dictionary<string, object> { { "payload", qrBase64 } });
+            }
 
             // Tap Next to proceed to measurements
             var nextBtn = wf.Until(d =>
@@ -535,8 +544,11 @@ namespace RecoveryTrac.AutomatedTests
                 "//android.widget.Button[contains(@text,'Scan the driver')] | //android.widget.TextView[contains(@text,'Scan')]"));
             scanBtn.Click();
 
-            flex.ExecuteScript("mobile: injectEmulatorCameraImage",
-                new Dictionary<string, object> { { "payload", qrBase64 } });
+            if (flex is IJavaScriptExecutor jsExecutor)
+            {
+                jsExecutor.ExecuteScript("mobile: injectEmulatorCameraImage",
+                    new Dictionary<string, object> { { "payload", qrBase64 } });
+            }
 
             var nextBtn = wf.Until(d =>
             {
@@ -649,7 +661,7 @@ namespace RecoveryTrac.AutomatedTests
             loadCallField.Click();
             loadCallField.SendKeys("75");
 
-            if (flex.IsKeyboardShown()) { flex.HideKeyboard(); }
+            flex.HideKeyboardIfShown();
 
             Assert.That(loadCallField.Text, Is.EqualTo("75"),
                 "Load Call % field should hold the value '75' after input.");
@@ -673,7 +685,7 @@ namespace RecoveryTrac.AutomatedTests
                 "//android.widget.EditText[contains(@resource-id,'loadCall')] | //android.widget.EditText[@text='']"));
             loadCallField.Click();
             loadCallField.SendKeys("75");
-            if (flex.IsKeyboardShown()) { flex.HideKeyboard(); }
+            flex.HideKeyboardIfShown();
 
             var submitButton = flex.FindElement(MobileBy.XPath(
                 "//android.widget.Button[@text='Submit'] | //android.widget.TextView[@text='Submit']"));
@@ -701,7 +713,7 @@ namespace RecoveryTrac.AutomatedTests
                 "//android.widget.EditText[contains(@resource-id,'loadCall')] | //android.widget.EditText[@text='']"));
             loadCallField.Click();
             loadCallField.SendKeys("75");
-            if (flex.IsKeyboardShown()) { flex.HideKeyboard(); }
+            flex.HideKeyboardIfShown();
 
             flex.FindElement(MobileBy.XPath(
                 "//android.widget.Button[@text='Submit'] | //android.widget.TextView[@text='Submit']")).Click();
@@ -736,7 +748,7 @@ namespace RecoveryTrac.AutomatedTests
                 "//android.widget.EditText[contains(@resource-id,'loadCall')] | //android.widget.EditText[@text='']"));
             loadCallField.Click();
             loadCallField.SendKeys("75");
-            if (flex.IsKeyboardShown()) { flex.HideKeyboard(); }
+            flex.HideKeyboardIfShown();
 
             flex.FindElement(MobileBy.XPath(
                 "//android.widget.Button[@text='Submit'] | //android.widget.TextView[@text='Submit']")).Click();
@@ -779,7 +791,7 @@ namespace RecoveryTrac.AutomatedTests
                 "//android.widget.EditText[contains(@resource-id,'loadCall')] | //android.widget.EditText[@text='']"));
             loadCallField.Click();
             loadCallField.SendKeys("75");
-            if (flex.IsKeyboardShown()) { flex.HideKeyboard(); }
+            flex.HideKeyboardIfShown();
 
             flex.FindElement(MobileBy.XPath(
                 "//android.widget.Button[@text='Submit'] | //android.widget.TextView[@text='Submit']")).Click();
@@ -825,7 +837,7 @@ namespace RecoveryTrac.AutomatedTests
                 "//android.widget.EditText[contains(@resource-id,'loadCall')] | //android.widget.EditText[@text='']"));
             loadCallField.Click();
             loadCallField.SendKeys("75");
-            if (flex.IsKeyboardShown()) { flex.HideKeyboard(); }
+            flex.HideKeyboardIfShown();
 
             flex.FindElement(MobileBy.XPath(
                 "//android.widget.Button[@text='Submit'] | //android.widget.TextView[@text='Submit']")).Click();
@@ -858,8 +870,11 @@ namespace RecoveryTrac.AutomatedTests
                 return (el != null && el.Displayed) ? el : null;
             });
             btnScanReceipt.Click();
-            driverDriver.ExecuteScript("mobile: injectEmulatorCameraImage",
-                new Dictionary<string, object> { { "payload", receiptQr64 } });
+            if (driverDriver is IJavaScriptExecutor jsExecutor)
+            {
+                jsExecutor.ExecuteScript("mobile: injectEmulatorCameraImage",
+                    new Dictionary<string, object> { { "payload", receiptQr64 } });
+            }
 
             // Dismiss receipt modal on Flex
             flex.FindElement(MobileBy.XPath(

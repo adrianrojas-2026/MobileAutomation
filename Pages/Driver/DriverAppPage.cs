@@ -6,7 +6,7 @@ using OpenQA.Selenium.Support.UI;
 namespace MobileAutomation.Tests.Pages.Driver;
     public class DriverAppPage
     {
-        private readonly AndroidDriver _driver;
+        private readonly IWebDriver _driver;
         private readonly WebDriverWait _wait;
 
         private readonly By _btnAceptarViaje = By.Id("driver.package:id/btn_aceptar_viaje");
@@ -14,7 +14,7 @@ namespace MobileAutomation.Tests.Pages.Driver;
         private readonly By _qrCodeImageLocator = By.Id("com.tetratech.recoverytracdriver:id/img_ticket_qr_code");
 
 
-        public DriverAppPage(AndroidDriver driver)
+        public DriverAppPage(IWebDriver driver)
         {
             _driver = driver;
             _wait = new WebDriverWait(_driver, TimeSpan.FromSeconds(15));

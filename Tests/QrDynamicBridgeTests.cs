@@ -4,6 +4,7 @@ using MobileAutomation.Tests.Pages.Driver;
 using MobileAutomation.Tests.Pages.FlexApp;
 using MobileAutomation.Tests.Tests;
 using MobileAutomation.Tests.Utilities;
+using OpenQA.Selenium.Appium.Android;
 
 namespace RecoveryTrac.AutomatedTests
 {
@@ -16,11 +17,18 @@ namespace RecoveryTrac.AutomatedTests
             // Send two environments configured in your appsettings.json 
             // (Example: One pointing to emulator 5554 and the other to 5556)
             DriverFactory.InitializeDualApps();
-            Console.WriteLine("Clearing native OS permission blocks on Driver App...");
-            PermissionHelper.HandleSystemPermissions(DriverFactory.DriverDriver);
+            
+            if (DriverFactory.DriverDriver is AndroidDriver driverAndroid)
+            {
+                Console.WriteLine("Clearing native OS permission blocks on Driver App...");
+                PermissionHelper.HandleSystemPermissions(driverAndroid);
+            }
 
-            Console.WriteLine("Clearing native OS permission blocks on Flex App...");
-            PermissionHelper.HandleSystemPermissions(DriverFactory.DriverFlex);
+            if (DriverFactory.DriverFlex is AndroidDriver flexAndroid)
+            {
+                Console.WriteLine("Clearing native OS permission blocks on Flex App...");
+                PermissionHelper.HandleSystemPermissions(flexAndroid);
+            }
         }
 
         [Test]
@@ -46,7 +54,10 @@ namespace RecoveryTrac.AutomatedTests
 
             // --- STEP 4: Real-time Injection in the Virtual Camera ---
             var scriptArgs = new Dictionary<string, object> { { "payload", qrImagenBase64 } };
-            DriverFactory.DriverFlex.ExecuteScript("mobile: injectEmulatorCameraImage", scriptArgs);
+            if (DriverFactory.DriverFlex is IJavaScriptExecutor jsExecutor)
+            {
+                jsExecutor.ExecuteScript("mobile: injectEmulatorCameraImage", scriptArgs);
+            }
 
             // --- STEP 5: Assertions / Verifications ---
             Assert.That(flexMainPage.GetTicketStatus(), Is.EqualTo("Ticket Synchronized Successfully"), "The ticket was not successfully synced in the Flex app.");
@@ -64,13 +75,19 @@ namespace RecoveryTrac.AutomatedTests
             // DriverFactory.DriverDriver.Location.Longitude = -84.0907;
 
             var locationDriver = new OpenQA.Selenium.Appium.Location { Latitude = 9.9281, Longitude = -84.0907, Altitude = 0 };
-            DriverFactory.DriverDriver.Location = locationDriver;
+            if (DriverFactory.DriverDriver is AndroidDriver androidDriverDevice)
+            {
+                androidDriverDevice.Location = locationDriver;
+            }
 
             // DriverFactory.DriverFlex.Location.Latitude = 9.9282; // Just a few meters away
             // DriverFactory.DriverFlex.Location.Longitude = -84.0908;
 
             var locationFlex = new OpenQA.Selenium.Appium.Location { Latitude = 9.9282, Longitude = -84.0908, Altitude = 0 };
-            DriverFactory.DriverFlex.Location = locationFlex;
+            if (DriverFactory.DriverFlex is AndroidDriver androidFlexDevice)
+            {
+                androidFlexDevice.Location = locationFlex;
+            }
 
             // --- STEP 2: Generate QR Code on RecoveryTrac Driver (Emulator 1) ---
             driverMapPage.GenerateTicket(); // Triggers QR rendering on screen
@@ -88,8 +105,10 @@ namespace RecoveryTrac.AutomatedTests
             
             // --- STEP 5: Real-Time Camera Injection ---
             var scriptArgs = new Dictionary<string, object> { { "payload", qrImageBase64 } };
-            DriverFactory.DriverFlex.ExecuteScript("mobile: injectEmulatorCameraImage", scriptArgs);
-            
+            if (DriverFactory.DriverFlex is IJavaScriptExecutor jsExecutor)
+            {
+                jsExecutor.ExecuteScript("mobile: injectEmulatorCameraImage", scriptArgs);
+            }
             // --- STEP 6: Assertions ---
             Assert.That(flexMainPage.GetTicketStatus(), Is.EqualTo("Ticket Synchronized Successfully"), "The ticket was not successfully synced in the Flex app.");
         }
@@ -103,11 +122,20 @@ namespace RecoveryTrac.AutomatedTests
              // --- STEP 1: Simulate High Distance (Driver is far away from the Flex Supervisor) ---
             // Safely assign Driver coordinates using the explicit Appium Location model
             var locationDriver = new OpenQA.Selenium.Appium.Location { Latitude = 9.9281, Longitude = -84.0907, Altitude = 0 };
-            DriverFactory.DriverDriver.Location = locationDriver;
+            
+            // 💡 Type check to make sure it's an emulator driver session before setting GPS
+            if (DriverFactory.DriverDriver is AndroidDriver androidDriverDevice)
+            {
+                androidDriverDevice.Location = locationDriver;
+            }
 
             // Flex App Supervisor is located 100+ kilometers away at Point B
             var locationFlex = new OpenQA.Selenium.Appium.Location { Latitude = 10.0024, Longitude = -83.0271, Altitude = 0 };
-            DriverFactory.DriverFlex.Location = locationFlex;
+            // 💡 Type check the supervisor driver session before setting GPS
+            if (DriverFactory.DriverFlex is AndroidDriver androidFlexDevice)
+            {
+                androidFlexDevice.Location = locationFlex;
+            }
 
             // --- STEP 2: Generate QR Code on RecoveryTrac Driver (Emulator 1) ---
             driverMapPage.GenerateTicket();
@@ -123,7 +151,10 @@ namespace RecoveryTrac.AutomatedTests
             
             // --- STEP 5: Real-Time Camera Injection ---
             var scriptArgs = new Dictionary<string, object> { { "payload", qrImageBase64 } };
-            DriverFactory.DriverFlex.ExecuteScript("mobile: injectEmulatorCameraImage", scriptArgs);
+            if (DriverFactory.DriverFlex is IJavaScriptExecutor jsExecutor)
+            {
+                jsExecutor.ExecuteScript("mobile: injectEmulatorCameraImage", scriptArgs);
+            }
 
             // --- STEP 6: Assert Failure due to Distance Fraud Check ---
             // Clean and highly readable business validations:

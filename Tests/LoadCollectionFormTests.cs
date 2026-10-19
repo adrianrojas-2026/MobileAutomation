@@ -2,6 +2,8 @@ using MobileAutomation.Tests.Drivers;
 using MobileAutomation.Tests.Tests;
 using OpenQA.Selenium.Appium;
 using OpenQA.Selenium.Support.UI;
+using OpenQA.Selenium;
+using OpenQA.Selenium.Appium.Android;
 
 namespace RecoveryTrac.AutomatedTests
 {
@@ -45,7 +47,10 @@ namespace RecoveryTrac.AutomatedTests
             try
             {
                 var clearArgs = new Dictionary<string, object> { { "payload", "" } };
-                DriverFactory.DriverFlex.ExecuteScript("mobile: injectEmulatorCameraImage", clearArgs);
+                if (DriverFactory.DriverFlex is IJavaScriptExecutor jsExecutor)
+                {
+                    jsExecutor.ExecuteScript("mobile: injectEmulatorCameraImage", clearArgs);
+                }
             }
             catch { /* Suppress non-blocking cleanup errors */ }
 
@@ -105,7 +110,7 @@ namespace RecoveryTrac.AutomatedTests
             string truckPlacardBase64 = Convert.ToBase64String(imageBytes);
 
             var cameraArgs = new Dictionary<string, object> { { "payload", truckPlacardBase64 } };
-            driver.ExecuteScript("mobile: injectEmulatorCameraImage", cameraArgs);
+            ((IJavaScriptExecutor)driver).ExecuteScript("mobile: injectEmulatorCameraImage", cameraArgs);
 
             // -------------------------------------------------------------------------
             // STEP 5: Base Verification & Business Rule Assertions
@@ -213,7 +218,7 @@ namespace RecoveryTrac.AutomatedTests
             // STEP 9: Simulate GPS Location Injection
             // -------------------------------------------------------------------------
             var mockLocation = new Location { Latitude = 28.1586965, Longitude = -81.6926507, Altitude = 0 };
-            driver.Location = mockLocation;
+            ((AndroidDriver)driver).Location = mockLocation;
 
             try
             {
@@ -263,7 +268,7 @@ namespace RecoveryTrac.AutomatedTests
             txtNotesInput.Click();
             txtNotesInput.SendKeys(mockComment);
             
-            if (driver.IsKeyboardShown()) { driver.HideKeyboard(); }
+            driver.HideKeyboardIfShown();
             Assert.That(txtNotesInput.Text, Is.EqualTo(mockComment));
 
             // -------------------------------------------------------------------------
@@ -316,7 +321,7 @@ namespace RecoveryTrac.AutomatedTests
             // Real-time Camera Frame Injection into the Driver App's context
             Console.WriteLine("Injecting the freshly generated Load-Collection QR into Driver App camera...");
             var ticketCameraArgs = new Dictionary<string, object> { { "payload", generatedTicketQrBase64 } };
-            driverDriver.ExecuteScript("mobile: injectEmulatorCameraImage", ticketCameraArgs);
+            ((IJavaScriptExecutor)driverDriver).ExecuteScript("mobile: injectEmulatorCameraImage", ticketCameraArgs);
 
             // Assertions on the Driver App (Disposal Workflow Activation)
             var lblDisposalHeader = wd.Until(d => {

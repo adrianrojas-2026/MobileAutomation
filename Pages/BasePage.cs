@@ -6,9 +6,9 @@ namespace MobileAutomation.Tests.Pages;
 
 public abstract class BasePage
 {
-    protected readonly AndroidDriver Driver;
+     protected readonly IWebDriver Driver;
 
-    protected BasePage(AndroidDriver driver)
+    protected BasePage(IWebDriver driver)
     {
         Driver = driver;
     }
@@ -32,7 +32,20 @@ public abstract class BasePage
     {
         var element = Find(locator);
 
-        element.Clear();
-        element.SendKeys(text);
+       // 💡 Check if we are running in Web mode (not an Android Appium Session) before attempting to read browser tag properties
+        if (Driver is not OpenQA.Selenium.Appium.Android.AndroidDriver && 
+            element.TagName.StartsWith("ion-", StringComparison.OrdinalIgnoreCase))
+        {
+            // Pierce into the native element child context to perform safe interactions inside Web mode
+            var nativeInput = element.FindElement(By.CssSelector("input, textarea"));
+            nativeInput.Clear();
+            nativeInput.SendKeys(text);
+        }
+        else
+        {
+            // Standard action loop fallback execution path for pure HTML fields and mobile emulators
+            element.Clear();
+            element.SendKeys(text);
+        }
     }
 }

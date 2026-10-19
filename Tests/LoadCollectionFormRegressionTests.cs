@@ -2,6 +2,8 @@ using MobileAutomation.Tests.Drivers;
 using MobileAutomation.Tests.Tests;
 using OpenQA.Selenium.Appium;
 using OpenQA.Selenium.Support.UI;
+using OpenQA.Selenium.Appium.Android;
+using OpenQA.Selenium;
 
 namespace RecoveryTrac.AutomatedTests
 {
@@ -39,8 +41,12 @@ namespace RecoveryTrac.AutomatedTests
         {
             try
             {
-                var clearArgs = new Dictionary<string, object> { { "payload", "" } };
-                DriverFactory.DriverFlex.ExecuteScript("mobile: injectEmulatorCameraImage", clearArgs);
+                if (DriverFactory.DriverFlex is IJavaScriptExecutor jsExecutor)
+                {
+                    var clearArgs = new Dictionary<string, object> { { "payload", "" } };
+                    jsExecutor.ExecuteScript("mobile: injectEmulatorCameraImage", clearArgs);
+                }
+
             }
             catch { /* Suppress non-blocking cleanup errors */ }
         }
@@ -109,7 +115,11 @@ namespace RecoveryTrac.AutomatedTests
             string base64 = Convert.ToBase64String(imageBytes);
 
             var cameraArgs = new Dictionary<string, object> { { "payload", base64 } };
-            DriverFactory.DriverFlex.ExecuteScript("mobile: injectEmulatorCameraImage", cameraArgs);
+            // 💡 Declare and instantiate jsExecutor right inside the type check expression
+            if (DriverFactory.DriverFlex is IJavaScriptExecutor jsExecutor)
+            {
+                jsExecutor.ExecuteScript("mobile: injectEmulatorCameraImage", cameraArgs);
+            }
         }
 
         // ─────────────────────────────────────────────────────────────────────

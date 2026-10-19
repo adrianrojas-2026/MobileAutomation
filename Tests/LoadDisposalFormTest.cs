@@ -4,6 +4,7 @@ using MobileAutomation.Tests.Tests;
 using MobileAutomation.Tests.Pages.Driver;
 using OpenQA.Selenium.Appium;
 using OpenQA.Selenium.Support.UI;
+using OpenQA.Selenium.Appium.Android;
 
 namespace RecoveryTrac.AutomatedTests
 {
@@ -30,7 +31,10 @@ namespace RecoveryTrac.AutomatedTests
             try
             {
                 var clearArgs = new Dictionary<string, object> { { "payload", "" } };
-                DriverFactory.DriverFlex.ExecuteScript("mobile: injectEmulatorCameraImage", clearArgs);
+                if (DriverFactory.DriverFlex is IJavaScriptExecutor jsExecutor)
+                {
+                    jsExecutor.ExecuteScript("mobile: injectEmulatorCameraImage", clearArgs);
+                }
             }
             catch { /* Suppress non-blocking cleanup errors */ }
 
@@ -138,7 +142,10 @@ namespace RecoveryTrac.AutomatedTests
             btnScanDriversQr.Click();
 
             var injectionArgs = new Dictionary<string, object> { { "payload", currentTicketQrBase64 } };
-            flexDriver.ExecuteScript("mobile: injectEmulatorCameraImage", injectionArgs);
+            if (flexDriver is IJavaScriptExecutor jsExecutor)
+            {
+                jsExecutor.ExecuteScript("mobile: injectEmulatorCameraImage", injectionArgs);
+            }
 
             // =========================================================================
             // STEP 7: Confirm Autofilled Fields & Fill Truck Measurements
@@ -165,7 +172,7 @@ namespace RecoveryTrac.AutomatedTests
             txtLoadCallPercent.Click();
             txtLoadCallPercent.SendKeys("75");
 
-            if (flexDriver.IsKeyboardShown()) { flexDriver.HideKeyboard(); }
+            flexDriver.HideKeyboardIfShown();
 
             // =========================================================================
             // STEP 8: Once Submit / Finalize Form
@@ -209,7 +216,7 @@ namespace RecoveryTrac.AutomatedTests
             // 4. Inject the raw image payload byte stream directly into the driver's camera sensor
             Console.WriteLine("Bridging Load Receipt QR code live into Driver App canvas context...");
             var cameraArgs = new Dictionary<string, object> { { "payload", receiptQrBase64 } };
-            driverDriver.ExecuteScript("mobile: injectEmulatorCameraImage", cameraArgs);
+            ((IJavaScriptExecutor)driverDriver).ExecuteScript("mobile: injectEmulatorCameraImage", cameraArgs);
             // 5. Dismiss the modal card overlay on the Flex supervisor screen to view the dashboard list
             var btnCloseReceiptView = flexDriver.FindElement(MobileBy.XPath("//android.widget.TextView[@text='✕'] | //android.widget.Button[contains(@text, 'Close')] | //android.widget.ImageView[contains(@content-desc, 'close')]"));
             btnCloseReceiptView.Click();
