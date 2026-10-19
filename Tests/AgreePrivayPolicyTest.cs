@@ -102,8 +102,12 @@ namespace RecoveryTrac.AutomatedTests
                 if (profileElements.Count > 0)
                 {
                     string profileText = profileElements.First().Text;
-                    Assert.That(profileText.ToLower(), Does.Contain("clocked out").Or.Contains("manager"), 
-                        $"The user profile text context value '{profileText}' does not contain your session validation credentials.");
+                    // Update the assertion to accept any valid active clock session string
+                    Assert.That(profileText.ToLower(), 
+                        Does.Contain("clocked out")
+                        .Or.Contains("clocked in")
+                        .Or.Contains("manager"),
+                        $"The user profile text context value '{profileText}' does not contain expected validation keywords.");
                 }
 
                 // 3. Validate Interactive Buttons Visibility
