@@ -64,13 +64,12 @@ public class LoginTests : BaseTest
             IConfiguration config = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("Config/appsettings.json", optional: false, reloadOnChange: false)
+                .AddUserSecrets(typeof(LoginTests).Assembly, optional: true)
                 .AddInMemoryCollection(environmentVariables)
                 .Build();
 
-            string email = config["TestSettings:LoginEmail"] ?? throw new NullReferenceException("LoginEmail setting is missing.");
-            //Username: Flex.testuser1@tetratech.com
-            string password = config["TestSettings:LoginPassword"] ?? throw new NullReferenceException("LoginPassword setting is missing.");
-            //Password: 3Puser1abc$
+            string email = config["TestSettings:LoginEmail"] ?? throw new NullReferenceException("LoginEmail setting is missing. Set it with 'dotnet user-secrets set TestSettings:LoginEmail <value>'.");
+            string password = config["TestSettings:LoginPassword"] ?? throw new NullReferenceException("LoginPassword setting is missing. Set it with 'dotnet user-secrets set TestSettings:LoginPassword <value>'.");
 
             // string email = await KeyVaultAccessClient.GetKeyVaultSecretAsync(
             //     config["TestSettings:flexLoginEmail"] ?? throw new NullReferenceException("LoginEmail setting is missing."), 
