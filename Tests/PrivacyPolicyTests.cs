@@ -18,7 +18,8 @@ namespace RecoveryTrac.AutomatedTests
         {
             // Initializes the dual-app matrix pools and configures the thread tokens
             DriverFactory.InitializeDualApps();
-            _wait.Value = new WebDriverWait(DriverFactory.DriverFlex, TimeSpan.FromSeconds(15));
+            int timeoutSeconds = int.Parse(TestConfiguration.Configuration["TestSettings:ExplicitWaitTimeoutSeconds"] ?? "15");
+            _wait.Value = new WebDriverWait(DriverFactory.DriverFlex, TimeSpan.FromSeconds(timeoutSeconds));
 
             // 💡 2. DISMISS POPUP: Handle native system notification permissions programmatically
             if (DriverFactory.DriverFlex is OpenQA.Selenium.Appium.Android.AndroidDriver androidFlex)
@@ -64,7 +65,7 @@ namespace RecoveryTrac.AutomatedTests
             if (driver is OpenQA.Selenium.Appium.Android.AndroidDriver androidDriver)
             {
                 Console.WriteLine("📱 Mobile Mode: Checking for post-login system permission overrides...");
-                MobileAutomation.Tests.Utilities.PermissionHelper.HandleSystemPermissions(androidDriver);
+                PermissionHelper.HandleSystemPermissions(androidDriver);
             }
 
             // 💡 3. Encapsulated Flow: Automatically handles any sequential onboarding documents (Privacy, EULA, etc.)
@@ -102,11 +103,10 @@ namespace RecoveryTrac.AutomatedTests
                 if (profileElements.Count > 0)
                 {
                     string profileText = profileElements.First().Text;
-                    // Update the assertion to accept any valid active clock session string
-                    Assert.That(profileText.ToLower(), 
+                    // Accept either valid clock session state
+                    Assert.That(profileText.ToLower(),
                         Does.Contain("clocked out")
-                        .Or.Contains("clocked in")
-                        .Or.Contains("manager"),
+                        .Or.Contains("clocked in"),
                         $"The user profile text context value '{profileText}' does not contain expected validation keywords.");
                 }
 

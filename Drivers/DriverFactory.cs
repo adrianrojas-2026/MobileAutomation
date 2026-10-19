@@ -52,6 +52,7 @@ public static class DriverFactory
         IConfiguration config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("Config/appsettings.json", optional: false, reloadOnChange: false)
+            .AddUserSecrets(typeof(DriverFactory).Assembly, optional: true)
             .Build();
 
         var appiumSection = config.GetSection("Appium");
@@ -145,13 +146,16 @@ public static class DriverFactory
         IConfiguration config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("Config/appsettings.json", optional: false, reloadOnChange: false)
+            .AddUserSecrets(typeof(DriverFactory).Assembly, optional: true)
             .Build();
 
         string runMode = config["TestSettings:RunMode"] ?? "Mobile";
         string webUrl = config["TestSettings:WebBaseUrl"] ?? "http://localhost:8100";
-        
-        _loginEmail.Value = config["TestSettings:LoginEmail"] ?? string.Empty;
-        _loginPassword.Value = config["TestSettings:LoginPassword"] ?? string.Empty;
+
+        _loginEmail.Value = config["TestSettings:LoginEmail"]
+            ?? throw new InvalidOperationException("LoginEmail setting is missing. Set it with 'dotnet user-secrets set TestSettings:LoginEmail <value>'.");
+        _loginPassword.Value = config["TestSettings:LoginPassword"]
+            ?? throw new InvalidOperationException("LoginPassword setting is missing. Set it with 'dotnet user-secrets set TestSettings:LoginPassword <value>'.");
 
         // =========================================================================
         // SCENARIO 1: DEV MODE ON LOCALHOST (Launches web browsers directly)

@@ -13,5 +13,6 @@ public static class TestConfiguration
                 "Config/appsettings.json",
                 optional: false,
                 reloadOnChange: false)
+            .AddUserSecrets(typeof(TestConfiguration).Assembly, optional: true)
             .Build();
 }
