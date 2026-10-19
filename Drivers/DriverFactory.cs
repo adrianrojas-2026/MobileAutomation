@@ -2,6 +2,9 @@ using Microsoft.Extensions.Configuration;
 using OpenQA.Selenium.Appium;
 using OpenQA.Selenium.Appium.Android;
 using OpenQA.Selenium.Appium.iOS;
+using OpenQA.Selenium;
+using OpenQA.Selenium.Chrome;
+using OpenQA.Selenium.Edge;
 
 namespace MobileAutomation.Tests.Drivers;
 
@@ -13,11 +16,11 @@ public static class DriverFactory
     public static AndroidDriver AndroidDriver => (AndroidDriver)Driver;
 
     // --- NUEVOS CONTENEDORES EXCLUSIVOS (Para escenarios simultáneos Flex + Driver) ---
-    private static ThreadLocal<AndroidDriver> _driverFlex = new();
-    private static ThreadLocal<AndroidDriver> _driverDriver = new();
+    private static ThreadLocal<IWebDriver> _driverFlex = new();
+    private static ThreadLocal<IWebDriver> _driverDriver = new();
 
-    public static AndroidDriver DriverFlex => _driverFlex.Value!;
-    public static AndroidDriver DriverDriver => _driverDriver.Value!;
+    public static IWebDriver DriverFlex => _driverFlex.Value!;
+    public static IWebDriver DriverDriver => _driverDriver.Value!;
 
     // --- Shared environment variables ---
     private static readonly ThreadLocal<string> _environment = new();
@@ -29,6 +32,11 @@ public static class DriverFactory
     public static string CurrentPlatformVersion => _platformVersion.Value ?? string.Empty;
     public static string CurrentDeviceName => _deviceName.Value ?? string.Empty;
     public static string CurrentUdid => _udid.Value ?? string.Empty;
+    private static readonly ThreadLocal<string> _loginEmail = new();
+    private static readonly ThreadLocal<string> _loginPassword = new();
+
+    public static string LoginEmail => _loginEmail.Value ?? string.Empty;
+    public static string LoginPassword => _loginPassword.Value ?? string.Empty;
 
    // Update the pool declaration in your DriverFactory to use the new isolated nodes
     private static readonly System.Collections.Concurrent.ConcurrentQueue<Tuple<string, string>> _availableNodesPool = new(new[]
@@ -53,14 +61,6 @@ public static class DriverFactory
         {
             throw new ArgumentException($"The configuration profile key '{environment}' was not found in appsettings.json.");
         }
-
-        Console.WriteLine("=================================");
-        Console.WriteLine($"Environment = {environment}");
-        Console.WriteLine($"PlatformName = {envSection["PlatformName"]}");
-        Console.WriteLine($"PlatformVersion = {envSection["PlatformVersion"]}");
-        Console.WriteLine($"DeviceName = {envSection["DeviceName"]}");
-        Console.WriteLine($"Udid = {envSection["Udid"]}");
-        Console.WriteLine("=================================");
 
         _environment.Value = environment;
         _platformVersion.Value = envSection["PlatformVersion"] ?? string.Empty;
@@ -132,10 +132,6 @@ public static class DriverFactory
             options.AddAdditionalAppiumOption("appium:appActivity", activity);
 
             _driver.Value = new AndroidDriver(new Uri(appiumSection["ServerUrl"]!), options);
-            
-            var androidDriver = (AndroidDriver)Driver;
-            Console.WriteLine($"Connected to Android {androidDriver.Capabilities.GetCapability("platformVersion")}");
-            Console.WriteLine($"Connected to device {androidDriver.Capabilities.GetCapability("udid")}");
         }
         else
         {
@@ -146,7 +142,44 @@ public static class DriverFactory
     
     public static void InitializeDualApps()
     {
-        // Lease an available node pair from the pool
+        IConfiguration config = new ConfigurationBuilder()
+            .SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("Config/appsettings.json", optional: false, reloadOnChange: false)
+            .Build();
+
+        string runMode = config["TestSettings:RunMode"] ?? "Mobile";
+        string webUrl = config["TestSettings:WebBaseUrl"] ?? "http://localhost:8100";
+        
+        _loginEmail.Value = config["TestSettings:LoginEmail"] ?? string.Empty;
+        _loginPassword.Value = config["TestSettings:LoginPassword"] ?? string.Empty;
+
+        // =========================================================================
+        // SCENARIO 1: DEV MODE ON LOCALHOST (Launches web browsers directly)
+        // =========================================================================
+        if (string.Equals(runMode, "Web", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("🌐 RunMode=Web. Launching desktop browser wrappers...");
+            
+            var chromeOptions = new ChromeOptions();
+            chromeOptions.AddArgument("--start-maximized");
+            // ADD THESE TWO LINES HERE TO SUPPRESS WEB POPUPS:
+            chromeOptions.AddArgument("--disable-notifications");
+            chromeOptions.AddArgument("--disable-popup-blocking");
+
+            _driverFlex.Value = new ChromeDriver(chromeOptions);
+            _driverFlex.Value.Navigate().GoToUrl(webUrl);
+
+            var edgeOptions = new EdgeOptions();
+            _driverDriver.Value = new EdgeDriver(edgeOptions);
+            _driverDriver.Value.Navigate().GoToUrl(webUrl);
+
+            _environment.Value = "Localhost_Web_Development";
+            return;
+        }
+
+        // =========================================================================
+        // SCENARIO 2: PARALLEL EMULATOR SUITE (Launches Android Appium server nodes)
+        // =========================================================================
         if (!_availableNodesPool.TryDequeue(out var node))
             throw new InvalidOperationException(
                 "No emulator node pairs available. All grid nodes are in use.");
@@ -155,22 +188,19 @@ public static class DriverFactory
         string environmentFlex = node.Item1;
         string environmentDriver = node.Item2;
 
-        IConfiguration config = new ConfigurationBuilder()
-            .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("Config/appsettings.json", optional: false, reloadOnChange: false)
-            .Build();
-
         var appiumSection = config.GetSection("Appium");
         string serverUrl = appiumSection["ServerUrl"]!;
 
         if (!config.GetSection($"MobileConfigurations:{environmentFlex}").Exists()) throw new ArgumentException("Invalid environment specified for Flex app.");
         if (!config.GetSection($"MobileConfigurations:{environmentDriver}").Exists()) throw new ArgumentException("Invalid environment specified for Driver app.");
-        // 1. INICIALIZAR RECOVERY TRAC FLEX
+                
+        // 1. INITIALIZE RECOVERY TRAC FLEX
+
         var envFlexSection = config.GetSection($"MobileConfigurations:{environmentFlex}");
         var optionsFlex = ConfigureOptions(appiumSection, envFlexSection, "flex");
         _driverFlex.Value = new AndroidDriver(new Uri(serverUrl), optionsFlex);
 
-        // 2. INICIALIZAR RECOVERY TRAC DRIVER
+        // 2. INITIALIZE RECOVERY TRAC DRIVER
         var envDriverSection = config.GetSection($"MobileConfigurations:{environmentDriver}");
         var optionsDriver = ConfigureOptions(appiumSection, envDriverSection, "driver");
         _driverDriver.Value = new AndroidDriver(new Uri(serverUrl), optionsDriver);
@@ -203,29 +233,61 @@ public static class DriverFactory
             options.AddAdditionalAppiumOption("appium:mjpegServerPort", int.Parse(mjpegPortStr));
         }
 
-        options.AddAdditionalAppiumOption("appium:uiautomator2ServerLaunchTimeout", 120000);
+        options.AddAdditionalAppiumOption("appium:noReset", true);
+        options.AddAdditionalAppiumOption("appium:shouldTerminateApp", true);
+        options.AddAdditionalAppiumOption("appium:clearDeviceLogsOnStart", true);
+
+        options.AddAdditionalAppiumOption("appium:uiautomator2ServerLaunchTimeout", 240000);
+        options.AddAdditionalAppiumOption("appium:uiautomator2ServerInstallTimeout", 240000);
         options.AddAdditionalAppiumOption("appium:newCommandTimeout", int.Parse(appiumSection["NewCommandTimeout"]!));
         options.AddAdditionalAppiumOption("appium:autoGrantPermissions", bool.Parse(appiumSection["AutoGrantPermissions"]!));
+        // Add this line to prevent older Android emulators from crashing on boot settings check
+        options.AddAdditionalAppiumOption("appium:ignoreHiddenApiPolicyError", true);
+
+        // ADD THIS LINE AS A BACKUP FOR ANDROID 13/14 ALERTS:
+        options.AddAdditionalAppiumOption("appium:autoAcceptAlerts", true);
         
         // 💡 DYNAMIC TARGET OVERRIDE INSIDE DUAL METHOD TOO
-        string package;
-        string activity;
+        
+        string package = string.Equals(appTarget, "driver", StringComparison.OrdinalIgnoreCase) 
+            ? "com.tetratech.recoverytracdriver" 
+            : "com.tetratech.recoverytracflex";
 
-        if (string.Equals(appTarget, "driver", StringComparison.OrdinalIgnoreCase))
-        {
-            package = "com.tetratech.recoverytracdriver";
-            activity = "com.tetratech.recoverytracdriver.MainActivity";
-        }
-        else
-        {
-            package = "com.tetratech.recoverytracflex";
-            activity = "com.tetratech.recoverytracflex.MainActivity";
-        }
+        string activity = string.Equals(appTarget, "driver", StringComparison.OrdinalIgnoreCase)
+            ? "com.tetratech.recoverytracdriver.MainActivity"
+            : "com.tetratech.recoverytracflex.MainActivity";
 
         options.AddAdditionalAppiumOption("appium:appPackage", package);
         options.AddAdditionalAppiumOption("appium:appActivity", activity);
 
         return options;
+    }
+
+    public static void SwitchToWebViewContext(IWebDriver driver)
+    {
+        // 💡 Only execute context switching if we are running an actual mobile Appium session
+        if (driver is AndroidDriver androidDriver)
+        {
+            Console.WriteLine("📱 Mobile Mode: Scanning for active Hybrid WebViews...");
+            
+            // Give Appium up to 5 seconds to load and recognize the underlying WebView layer
+            var contextWait = new OpenQA.Selenium.Support.UI.WebDriverWait(androidDriver, TimeSpan.FromSeconds(5));
+            try
+            {
+                contextWait.Until(d => androidDriver.Contexts.Count > 1);
+                
+                // Select the target context node that contains the word 'WEBVIEW'
+                string webviewContext = androidDriver.Contexts.FirstOrDefault(c => c.Contains("WEBVIEW")) 
+                    ?? androidDriver.Contexts.Last(); // Fallback to last initialized container
+                
+                Console.WriteLine($"📱 Mobile Mode: Switching context from NATIVE_APP to => {webviewContext}");
+                androidDriver.Context = webviewContext;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Context switch to WEBVIEW failed: {ex.Message}. Remaining in native context.");
+            }
+        }
     }
 
     public static void Quit()

@@ -6,57 +6,47 @@ namespace MobileAutomation.Tests.Utilities;
 
 public static class PermissionHelper
 {
-    // Native Android System UI locators for permission buttons
-    private static readonly By NativeAllowButton = By.Id("com.android.permissioncontroller:id/permission_allow_button");
-    private static readonly By NativeAllowForegroundButton = By.Id("com.android.permissioncontroller:id/permission_allow_foreground_only_button");
+        // 💡 Expanded to match standard permission buttons ("Allow", "ALLOW") case-insensitively
+    private static readonly By NativeAllowButton = By.XPath(
+        "//android.widget.Button[contains(translate(@text, 'ALLOW', 'allow'), 'allow')]");
 
-    /// <summary>
-    /// Automatically detects and clicks "Allow" on any native Android OS system permission popups 
-    /// (Notifications, Camera, Location, etc.) within a short window.
-    /// </summary>
-    /// <param name="driver">The specific AndroidDriver instance experiencing the popup.</param>
-    /// <param name="timeoutSeconds">Max time to wait for the popup to show up (default is small for speed).</param>
-    public static void HandleSystemPermissions(AndroidDriver driver, int timeoutSeconds = 4)
+    // 💡 Expanded to catch location-specific permissions ("While using the app", "Only this time")
+    private static readonly By NativeAllowForegroundButton = By.XPath(
+        "//android.widget.Button[contains(@text, 'using the app')] " +
+        "| //android.widget.Button[contains(@text, 'this time')] " +
+        "| //android.widget.Button[contains(translate(@text, 'WHILE USING THE APP', 'while using the app'), 'using the app')]");
+
+    public static void HandleSystemPermissions(AndroidDriver driver)
     {
-        var shortWait = new WebDriverWait(driver, TimeSpan.FromSeconds(timeoutSeconds));
-
         try
         {
-            // Wait until either the standard Allow button OR the "While using the app" button is visible
-            IWebElement? buttonToClick = shortWait.Until(drv =>
+            // 💡 Comprehensive XPath matching standard Android OS permission dialog choices
+            // Targets: "Allow" (Notifications/Files), "While using the app" / "Only this time" (GPS Location)
+            var permissionButtonXpath = By.XPath(
+                "//android.widget.Button[contains(translate(@text, 'ALLOW', 'allow'), 'allow')] " +
+                "| //android.widget.Button[contains(@text, 'using the app')] " +
+                "| //android.widget.Button[contains(@text, 'this time')]");
+
+            // Check up to 2 times in case multiple different system popups appear back-to-back
+            for (int i = 0; i < 2; i++)
             {
-                try
+                var buttons = driver.FindElements(permissionButtonXpath);
+                if (buttons.Count > 0 && buttons.First().Displayed)
                 {
-                    var allowBtn = drv.FindElement(NativeAllowButton);
-                    if (allowBtn.Displayed) return allowBtn;
+                    Console.WriteLine($"📱 PermissionHelper: Native system dialog button detected. Dismissing layer...");
+                    buttons.First().Click();
+                    
+                    // Brief pause to allow the OS UI layout calculation threads to update
+                    System.Threading.Thread.Sleep(1000); 
                 }
-                catch (NoSuchElementException) { /* Continue checking next locator */ }
-
-                try
-                {
-                    var foregroundBtn = drv.FindElement(NativeAllowForegroundButton);
-                    if (foregroundBtn.Displayed) return foregroundBtn;
-                }
-                catch (NoSuchElementException) { /* Both are missing in this poll cycle */ }
-
-                return null;
-            });
-
-            if (buttonToClick != null)
-            {
-                buttonToClick.Click();
-                Console.WriteLine($"[PermissionHelper] Native Android permission dialog bypassed successfully.");
-                
-                // Recursive call to check if another system permission dialog appears immediately after (e.g., Notification followed by Camera)
-                HandleSystemPermissions(driver, timeoutSeconds: 2);
             }
         }
-        catch (WebDriverTimeoutException)
+        catch (Exception ex)
         {
-            // No permission popup appeared within the timeframe; safely proceed with the test execution flow
-            Console.WriteLine("[PermissionHelper] No native permission dialogs detected. Moving forward.");
+            Console.WriteLine($"PermissionHelper non-blocking notice: {ex.Message}");
         }
     }
+    
     public static void HandleNotifications(AndroidDriver driver)
     {
         try

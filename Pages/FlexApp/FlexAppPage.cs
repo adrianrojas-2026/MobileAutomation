@@ -7,7 +7,7 @@ using OpenQA.Selenium;
 namespace MobileAutomation.Tests.Pages.FlexApp;
     public class FlexAppPage
     {
-        private readonly AndroidDriver _driverFlex;
+        private readonly IWebDriver _driverFlex;
         private readonly WebDriverWait _wait;
 
         // Locators (Use real IDs using Appium Inspector)
@@ -20,7 +20,7 @@ namespace MobileAutomation.Tests.Pages.FlexApp;
         private readonly By _qrCodeImageLocator = By.Id("com.tetratech.recoverytracflex:id/img_ticket_qr_code"); //TBD
       
 
-        public FlexAppPage(AndroidDriver driver)
+        public FlexAppPage(IWebDriver driver)
         {
             _driverFlex = driver;
             _wait = new WebDriverWait(_driverFlex, TimeSpan.FromSeconds(15));
