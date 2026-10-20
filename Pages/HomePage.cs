@@ -17,12 +17,11 @@ public class HomePage : BasePage
         {
             if (!DriverFactory.DriverFlex.GetType().Name.Contains("AndroidDriver"))
             {
-                // Web Browser path fallback
-                return By.XPath("//ion-label[contains(text(), 'Work State')] | //*[normalize-space()='Work State']");
+                // Web Browser: Target the overarching ion-item block container that wraps BOTH the label and the input value field
+                return By.XPath("//ion-item[contains(., 'Work State')] | //ion-row[contains(., 'Work State')]");
             }
-            
-            // Mobile Android: Targets the projectTask30 container or spinner layout field
-            return By.XPath("//android.view.View[@resource-id='projectTask30'] | //android.widget.Spinner[contains(@text, 'Work State')] | //*[contains(@text, 'Work State')]");
+            // Mobile Android path stays exactly the same
+            return By.XPath("//android.view.View[@resource-id='projectTask30'] | //android.widget.Spinner[contains(@text, 'Work State')]");
         }
     }
 
@@ -32,11 +31,11 @@ public class HomePage : BasePage
         {
             if (!DriverFactory.DriverFlex.GetType().Name.Contains("AndroidDriver"))
             {
-                return By.XPath("//*[contains(text(), 'FL')]");
+                // Web Browser path: Dynamically targets any available choice option in the web dropdown list popup overlay
+                return By.XPath("//ion-select-option | //ion-alert//button | //*[contains(text(), 'FL')] | //ion-item[contains(@id, 'ion-sel')]");
             }
-            
-            // Mobile Android: Dynamically clicks the first available entry state layout item string row
-            return By.XPath("//android.widget.CheckedTextView | //android.view.View[contains(@clickable, 'true')] | //android.widget.ListView/*");
+            // Mobile Android path
+            return By.XPath("//android.widget.CheckedTextView | //android.view.View[contains(@clickable, 'true')]");
         }
     }
 
@@ -195,221 +194,209 @@ public class HomePage : BasePage
     
     public void CompleteProjectAssignment(OpenQA.Selenium.Support.UI.WebDriverWait wf)
     {
-        // =========================================================================
-        // GUARD CLAUSE: Check if a project is already assigned to skip form steps!
-        // =========================================================================
-        bool isProjectAlreadyAssigned = false;
+        // 1. Guard Clause: Skip if already configured
+        if (IsProjectAlreadyConfigured())
+        {
+            Console.WriteLine("⏩ Project configuration is already active. Skipping assignment steps.");
+            return;
+        }
+
+        Console.WriteLine("🛠️ Project unassigned. Starting form setup workflow...");
+
+        // 2. Open the Assignment Modal
+        OpenAssignmentModal(wf);
+        
+        // 3. Run Platform-Specific Preamble (Mobile only handles)
+        bool isMobileMode = IsMobileSession();
+        if (isMobileMode)
+        {
+            HandleMobileFormPreamble(wf);
+        }
+
+        // 4. Shared Step: Select Labor Category / Position
+        SelectLaborCategory(wf);
+
+        // 5. Shared Step: Select Work State
+        SelectWorkState(wf);
+
+        // 6. Submit Changes
+        SubmitAssignmentChange(wf);
+    }
+
+    private bool IsMobileSession()
+    {
+        return DriverFactory.DriverFlex?.GetType().Name.Contains("AndroidDriver") == true
+            || DriverFactory.DriverFlex?.ToString()?.Contains("Android") == true;
+    }
+
+    private bool IsProjectAlreadyConfigured()
+    {
         try
         {
-            // Check if the dashboard banner is actively displaying your selected text elements
             var bannerElements = DriverFactory.DriverFlex.FindElements(DemoTestingBanner);
             if (bannerElements.Count > 0 && bannerElements[0].Displayed)
             {
                 string bannerText = bannerElements[0].Text;
-                // If it already says DEMO-TESTING, we don't need to re-configure it!
-                if (bannerText.Contains("DEMO-TESTING") || bannerText.Contains("Demo Labor Category"))
-                {
-                    isProjectAlreadyAssigned = true;
-                }
+                return bannerText.Contains("DEMO-TESTING") || bannerText.Contains("Demo Labor Category");
             }
         }
-        catch (Exception)
-        {
-            // Element not found or profile is unassigned; proceed to select details below
-            isProjectAlreadyAssigned = false;
-        }
+        catch (Exception) { /* Handle missing element as unconfigured state */ }
+        return false;
+    }
 
-        if (isProjectAlreadyAssigned)
-        {
-            Console.WriteLine("⏩ Project configuration is already active on the dashboard. Validating and skipping assignment steps.");
-            return; // Exits the method instantly, protecting your workflow loop!
-        }
-
-        // =========================================================================
-        // ORIGINAL ASSIGNMENT WORKFLOW (Runs only if form initialization is missing)
-        // =========================================================================
-        Console.WriteLine("🛠️ Project unassigned. Starting step-by-step form setup workflow...");
-
-        // 1. Click the edit assignment pencil icon to bring up the modal
+    private void OpenAssignmentModal(OpenQA.Selenium.Support.UI.WebDriverWait wf)
+    {
         var pencilBtn = wf.Until(d => d.FindElement(EditAssignmentPencil));
         pencilBtn.Click();
+        System.Threading.Thread.Sleep(800); // Animation buffer
 
-        // Wait safely for the modal container to animate into view
-        System.Threading.Thread.Sleep(800);
-        
-        // Explicitly identify if we are targeting mobile based on your framework wrapper setup
-        bool isMobileMode = DriverFactory.DriverFlex?.GetType().Name.Contains("AndroidDriver") == true
-                    || DriverFactory.DriverFlex?.ToString()?.Contains("Android") == true;
-        
         wf.Until(d => 
         {
             try 
             {
-                if (!isMobileMode)
-                {
-                    var webHeader = d.FindElement(By.XPath("//ion-header//*[contains(translate(text(), 'ASSIGNMENT', 'assignment'), 'assignment')] | //div[contains(@class, 'modal')] | //*[text()='Change Assignment']"));
-                    return webHeader != null && webHeader.Displayed;
-                }
-                else
-                {
-                    var mobileHeader = d.FindElement(By.XPath("//android.widget.TextView[@text='Change Assignment'] | //*[contains(@text, 'Assignment')]"));
-                    return mobileHeader != null && mobileHeader.Displayed;
-                }
+                var locator = !IsMobileSession() 
+                    ? By.XPath("//ion-header//*[contains(translate(text(), 'ASSIGNMENT', 'assignment'), 'assignment')] | //div[contains(@class, 'modal')] | //*[text()='Change Assignment']")
+                    : By.XPath("//android.widget.TextView[@text='Change Assignment'] | //*[contains(@text, 'Assignment')]");
+                    
+                var header = d.FindElement(locator);
+                return header != null && header.Displayed;
             }
-            catch (NoSuchElementException) 
-            {
-                return false; 
-            }
+            catch (NoSuchElementException) { return false; }
         });
-        
         System.Threading.Thread.Sleep(500);
+    }
 
-        // =========================================================================
-        // MOBILE ONLY STEP CONTAINER
-        // =========================================================================
-        if (isMobileMode)
-        {
-            Console.WriteLine("📱 Mobile mode detected. Selecting the Project option field...");
-            
-            // A. Click the empty 'Project' input container slot to open selection overlay
-            var projDropdown = wf.Until(d => d.FindElement(ProjectDropdown));
-            projDropdown.Click();
-            System.Threading.Thread.Sleep(500);
-            
-            // B. Wait and interactively target the choice selection list string
-            wf.Until(d => 
-            {
-                try
-                {
-                    var option = d.FindElement(By.XPath("//*[contains(@text, 'DEMO-TESTING')] | //android.widget.CheckedTextView[contains(@text, 'DEMO-TESTING')]"));
-                    if (option != null && option.Displayed)
-                    {
-                        option.Click();
-                        return option;
-                    }
-                    return null;
-                }
-                catch (Exception) { return null; }
-            });
-            
-            System.Threading.Thread.Sleep(800);
-
-            // =====================================================================
-            // MOVED INSIDE: Select the Task field since it is now visible on mobile
-            // =====================================================================
-            Console.WriteLine("📱 Selecting the mandatory Task field on mobile view...");
-            var taskField = wf.Until(d => d.FindElement(TaskDropdown));
-            taskField.Click();
-            System.Threading.Thread.Sleep(500);
-
-            wf.Until(d =>
-            {
-                try
-                {
-                    var taskSel = d.FindElement(TaskOption);
-                    if (taskSel != null && taskSel.Displayed)
-                    {
-                        taskSel.Click();
-                        return taskSel;
-                    }
-                    return null;
-                }
-                catch (Exception) { return null; }
-            });
-
-            System.Threading.Thread.Sleep(800);
-            
-        } // <--- THIS closing bracket must capture everything mobile-only!
-
-        // =========================================================================
-        // SHARED CONTINUATION WORKFLOW (Both Web and Mobile run from here onward)
-        // =========================================================================
-
-        // 2. Click the context input field (Labor Category on Web, Position on Mobile)
-        var laborDropdown = wf.Until(d => d.FindElement(LaborCategoryDropdown));
-        laborDropdown.Click();
-
-        // Small animation buffer pause for the list overlay transition
-        System.Threading.Thread.Sleep(800);
-
-         // 3. Select the option item from the modal list overlay
-        var pmOption = wf.Until(d => 
+    private void HandleMobileFormPreamble(OpenQA.Selenium.Support.UI.WebDriverWait wf)
+    {
+        Console.WriteLine("📱 Mobile mode detected. Selecting Project and Task fields...");
+        
+        // Select Project
+        var projDropdown = wf.Until(d => d.FindElement(ProjectDropdown));
+        projDropdown.Click();
+        System.Threading.Thread.Sleep(500);
+        
+        wf.Until(d => 
         {
             try
             {
-                // REMOVED: HideKeyboard() loop call to prevent Appium driver timeout locks
-                
+                var option = d.FindElement(By.XPath("//*[contains(@text, 'DEMO-TESTING')] | //android.widget.CheckedTextView[contains(@text, 'DEMO-TESTING')]"));
+                if (option != null && option.Displayed) { option.Click(); return option; }
+                return null;
+            }
+            catch (Exception) { return null; }
+        });
+        System.Threading.Thread.Sleep(800);
+
+        // Select Task
+        var taskField = wf.Until(d => d.FindElement(TaskDropdown));
+        taskField.Click();
+        System.Threading.Thread.Sleep(500);
+
+        wf.Until(d =>
+        {
+            try
+            {
+                var taskSel = d.FindElement(TaskOption);
+                if (taskSel != null && taskSel.Displayed) { taskSel.Click(); return taskSel; }
+                return null;
+            }
+            catch (Exception) { return null; }
+        });
+        System.Threading.Thread.Sleep(800);
+    }
+
+    private void SelectLaborCategory(OpenQA.Selenium.Support.UI.WebDriverWait wf)
+    {
+        var laborDropdown = wf.Until(d => d.FindElement(LaborCategoryDropdown));
+        laborDropdown.Click();
+        System.Threading.Thread.Sleep(800);
+
+        wf.Until(d => 
+        {
+            try
+            {
                 var element = d.FindElement(ProjectManagerOption);
+                if (element != null && element.Displayed) { element.Click(); return element; }
+                return null;
+            }
+            catch (Exception) { return null; }
+        });
+        System.Threading.Thread.Sleep(800);
+    }
+
+    private void SelectWorkState(OpenQA.Selenium.Support.UI.WebDriverWait wf)
+    {
+        Console.WriteLine("🌐📱 Validating mandatory Work State field status...");
+        
+        // 1. Safely extract the outer wrapper text layer first
+        var stateField = wf.Until(d => d.FindElement(WorkStateDropdown));
+        string currentStateText = stateField.Text?.ToLower().Trim() ?? string.Empty;
+        
+        Console.WriteLine($"🔍 Extracted Work State text envelope: '{currentStateText}'");
+
+        // =========================================================================
+        // GUARD CLAUSE: If 'virginia', 'fl', or any chosen option is present, skip!
+        // =========================================================================
+        if (currentStateText.Contains("virginia") || 
+            currentStateText.Contains("fl") || 
+            (currentStateText.Length > 12 && !currentStateText.EndsWith("work state") && !currentStateText.Contains("select")))
+        {
+            Console.WriteLine($"⏩ Work State evaluates as pre-populated ('{stateField.Text?.Replace("\n", " ").Trim() ?? string.Empty}'). Skipping dropdown interactions.");
+            return; // Exits the method instantly so lines 350-381 never run!
+        }
+
+        // =========================================================================
+        // FALLBACK WORKFLOW: Runs only if the dropdown is genuinely blank/empty
+        // =========================================================================
+        Console.WriteLine("🌐📱 Work State is blank. Tapping open list overlay...");
+        
+        wf.Until(d => 
+        {
+            try
+            {
+                var element = d.FindElement(WorkStateDropdown);
                 if (element != null && element.Displayed)
                 {
                     element.Click();
-                    return element;
+                    return true;
+                }
+                return false;
+            }
+            catch (Exception) { return false; }
+        });
+        
+        System.Threading.Thread.Sleep(600);
+
+        wf.Until(d =>
+        {
+            try
+            {
+                var stateSel = d.FindElement(WorkStateOption);
+                if (stateSel != null && stateSel.Displayed) 
+                { 
+                    stateSel.Click(); 
+                    return stateSel; 
                 }
                 return null;
             }
-            catch (ElementNotInteractableException)
-            {
-                return null; // Menu transition animation running, keep polling
-            }
-            catch (NoSuchElementException)
-            {
-                return null; // Element hasn't rendered in layout list tree yet, keep waiting
-            }
+            catch (Exception) { return null; }
         });
-
-        // Small pause to let the choice register and populate back into the form field box
-        System.Threading.Thread.Sleep(800);
         
-        // =========================================================================
-        // MOBILE ONLY SUB-STEP: Select the Work State field to clear validation
-        // =========================================================================
-        if (DriverFactory.DriverFlex?.GetType().Name.Contains("AndroidDriver") == true 
-            || DriverFactory.DriverFlex?.ToString()?.Contains("Android") == true)
-        {
-            Console.WriteLine("📱 Selecting the mandatory Work State dropdown field on mobile layout view...");
-            
-            var stateField = wf.Until(d => d.FindElement(WorkStateDropdown));
-            stateField.Click();
-            System.Threading.Thread.Sleep(600);
+        System.Threading.Thread.Sleep(800);
+    }
 
-            wf.Until(d =>
-            {
-                try
-                {
-                    var stateSel = d.FindElement(WorkStateOption);
-                    if (stateSel != null && stateSel.Displayed)
-                    {
-                        stateSel.Click();
-                        return stateSel;
-                    }
-                    return null;
-                }
-                catch (Exception) 
-                { 
-                    return null; // Keep polling item tray if animation is lagging frame rates
-                }
-            });
-
-            System.Threading.Thread.Sleep(800);
-        }
-
-        // 4. Click the 'CHANGE' button to confirm and close the assignment overlay
+    private void SubmitAssignmentChange(OpenQA.Selenium.Support.UI.WebDriverWait wf)
+    {
         var changeBtn = wf.Until(d => 
         {
             try
             {
                 var element = d.FindElement(ChangeSubmitButton);
-                if (element != null && element.Displayed && element.Enabled)
-                {
-                    element.Click();
-                    return element;
-                }
+                if (element != null && element.Displayed && element.Enabled) { element.Click(); return element; }
                 return null;
             }
-            catch (NoSuchElementException) { return null; }
-            catch (ElementNotInteractableException) { return null; }
+            catch (Exception) { return null; }
         });
-
         System.Threading.Thread.Sleep(1500);
     }
 
