@@ -11,17 +11,20 @@ public class HomePage : BasePage
     { 
     }
 
-    public By WorkStateDropdown
+   public By WorkStateDropdown
     {
         get
         {
             if (!DriverFactory.DriverFlex.GetType().Name.Contains("AndroidDriver"))
             {
-                // Web Browser: Target the overarching ion-item block container that wraps BOTH the label and the input value field
+                // Web Browser path remains exactly the same
                 return By.XPath("//ion-item[contains(., 'Work State')] | //ion-row[contains(., 'Work State')]");
             }
-            // Mobile Android path stays exactly the same
-            return By.XPath("//android.view.View[@resource-id='projectTask30'] | //android.widget.Spinner[contains(@text, 'Work State')]");
+            
+            // Mobile Android: Explicitly find a text view containing 'Work State' and get its adjacent interactable field,
+            return By.XPath("//*[contains(@text, 'Work State')]/following-sibling::android.widget.Spinner " +
+                        "| //*[contains(@text, 'Work State')]/following-sibling::android.view.View " +
+                        "| //*[contains(@text, 'Work State')]/..//*[@clickable='true']");
         }
     }
 
@@ -31,11 +34,12 @@ public class HomePage : BasePage
         {
             if (!DriverFactory.DriverFlex.GetType().Name.Contains("AndroidDriver"))
             {
-                // Web Browser path: Dynamically targets any available choice option in the web dropdown list popup overlay
-                return By.XPath("//ion-select-option | //ion-alert//button | //*[contains(text(), 'FL')] | //ion-item[contains(@id, 'ion-sel')]");
+                // Web Browser path
+                return By.XPath("//ion-select-option | //ion-alert//button | //*[contains(text(), 'FL')]");
             }
-            // Mobile Android path
-            return By.XPath("//android.widget.CheckedTextView | //android.view.View[contains(@clickable, 'true')]");
+            
+            // Mobile Android: Look universally for any selectable view option text items in the dropdown popup list
+            return By.XPath("//android.widget.CheckedTextView | //android.view.View[contains(@clickable, 'true')] | //android.widget.ListView/*");
         }
     }
 
@@ -49,8 +53,8 @@ public class HomePage : BasePage
                 return By.XPath("//ion-label[contains(text(), 'Task')] | //*[normalize-space()='Task']");
             }
             
-            // Mobile Android: Target the specific view resource ID found via Appium Inspector
-             return By.XPath("//android.view.View[@resource-id='projectTask28'] | (//android.view.View[@resource-id='projectTask28'])[1] | //android.view.View[@resource-id='projectTask28']");
+            // Alternative fallback version if the ID numbers shift dynamically:
+            return By.XPath("//android.view.View[@resource-id='projectTask28'] | //*[@resource-id='projectTask28']");
         }
     }
 
@@ -64,7 +68,7 @@ public class HomePage : BasePage
             {
                 return By.XPath("//*[contains(text(), '01 -')]");
             }
-            return By.XPath("//*[contains(@text, 'Demo Task')] | //android.view.View[contains(@text, 'Demo Task')] | //android.widget.ListView/*[contains(@clickable, 'true')]");
+            return By.XPath("//*[contains(@text, 'Demo Task')] | //android.widget.CheckedTextView[contains(@text, 'Demo Task')] | (//android.widget.ListView/*)[3]");
         }
     }
 
@@ -109,8 +113,9 @@ public class HomePage : BasePage
                 return By.XPath("//ion-label[contains(text(), 'Labor Category')] | //*[normalize-space()='Labor Category']");
             }
             
-            // Mobile Android: Look for a projectTask view element following the task selection field
-            return By.XPath("//android.view.View[@resource-id='projectTask29']");
+            return By.XPath("//*[contains(@text, 'Labor Category')]/following-sibling::android.view.View " +
+                        "| //*[contains(@text, 'Labor Category')]/..//android.widget.Spinner " +
+                        "| //*[contains(@text, 'Labor Category')]/..//*[@clickable='true']");
         }
     }
 
@@ -243,26 +248,37 @@ public class HomePage : BasePage
         catch (Exception) { /* Handle missing element as unconfigured state */ }
         return false;
     }
-
     private void OpenAssignmentModal(OpenQA.Selenium.Support.UI.WebDriverWait wf)
     {
+        // 1. Click the edit assignment pencil icon to bring up the modal
         var pencilBtn = wf.Until(d => d.FindElement(EditAssignmentPencil));
         pencilBtn.Click();
         System.Threading.Thread.Sleep(800); // Animation buffer
 
+        // 2. Wait out the modal rendering sequence safely across both platforms
         wf.Until(d => 
         {
             try 
             {
-                var locator = !IsMobileSession() 
-                    ? By.XPath("//ion-header//*[contains(translate(text(), 'ASSIGNMENT', 'assignment'), 'assignment')] | //div[contains(@class, 'modal')] | //*[text()='Change Assignment']")
-                    : By.XPath("//android.widget.TextView[@text='Change Assignment'] | //*[contains(@text, 'Assignment')]");
-                    
-                var header = d.FindElement(locator);
-                return header != null && header.Displayed;
+                if (!IsMobileSession())
+                {
+                    // Web Browser: Target the header web DOM elements cleanly
+                    var webHeader = d.FindElement(By.XPath("//ion-header//*[contains(translate(text(), 'ASSIGNMENT', 'assignment'), 'assignment')] | //div[contains(@class, 'modal')] | //*[text()='Change Assignment']"));
+                    return webHeader != null && webHeader.Displayed;
+                }
+                else
+                {
+                    // Mobile Android Emulator: Search directly for the visible text view layer string
+                    var mobileHeader = d.FindElement(By.XPath("//android.widget.TextView[@text='Change Assignment'] | //*[contains(@text, 'Change Assignment')]"));
+                    return mobileHeader != null && mobileHeader.Displayed;
+                }
             }
-            catch (NoSuchElementException) { return false; }
+            catch (NoSuchElementException) 
+            { 
+                return false; // Keep polling until the overlay layout completely animation stabilizes
+            }
         });
+        
         System.Threading.Thread.Sleep(500);
     }
 
@@ -292,17 +308,27 @@ public class HomePage : BasePage
         taskField.Click();
         System.Threading.Thread.Sleep(500);
 
-        wf.Until(d =>
+        wf.Until(d => 
         {
             try
             {
-                var taskSel = d.FindElement(TaskOption);
-                if (taskSel != null && taskSel.Displayed) { taskSel.Click(); return taskSel; }
-                return null;
+                // Find the specific task element in the open list
+                var elements = d.FindElements(By.XPath("//*[contains(@text, 'FRANK-TEST')]"));
+                
+                if (elements.Count > 0 && elements[0].Displayed)
+                {
+                    elements[0].Click(); // Perform the selection
+                    return true;        // Exit the wait loop successfully
+                }
+                return false; // Keep waiting if the element isn't visible yet
             }
-            catch (Exception) { return null; }
+            catch (Exception)
+            {
+                return false; 
+            }
         });
-        System.Threading.Thread.Sleep(800);
+
+        System.Threading.Thread.Sleep(500); // Micro stabilization pause
     }
 
     private void SelectLaborCategory(OpenQA.Selenium.Support.UI.WebDriverWait wf)
