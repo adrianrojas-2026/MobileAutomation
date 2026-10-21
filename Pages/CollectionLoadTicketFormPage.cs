@@ -29,12 +29,16 @@ public class CollectionLoadTicketFormPage : BasePage
     private By FormTitle => By.XPath($"{FormModal}//ion-title[normalize-space()='Collection Load Ticket']");
     private By CurrentStepName => By.XPath("//app-form-standard-footer//ion-label[contains(@class,'current-step-name')]");
     private By FooterButton(string text) => By.XPath(
-        $"//app-form-standard-footer//ion-button[normalize-space()='{text}' and not(@disabled)]");
+        $"//app-form-standard-footer//ion-button[translate(normalize-space(),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{text.ToUpperInvariant()}' and not(@disabled)]");
 
-    private By Field(string label) => By.XPath(
-        $"{FieldContainer}[.//ion-label[contains(normalize-space(.),'{label}')]]");
-    private By FieldInput(string label) => By.XPath(
-        $"{FieldContainer}[.//ion-label[contains(normalize-space(.),'{label}')]]//input");
+    // Innermost field container owning the label: a wrapping container (step group, ...) also contains the label,
+    // and its first //input belongs to a different field
+    private static string LabelledField(string label) =>
+        $"{FieldContainer}[.//ion-label[contains(normalize-space(.),'{label}')]]" +
+        $"[not(.//div[contains(@class,'element-container')][.//ion-label[contains(normalize-space(.),'{label}')]])]";
+
+    private By Field(string label) => By.XPath(LabelledField(label));
+    private By FieldInput(string label) => By.XPath($"{LabelledField(label)}//input");
     private By RadioOption(string questionLabel, string option) => By.XPath(
         $"{FieldContainer}[.//ion-label[contains(normalize-space(.),'{questionLabel}')]]" +
         $"//ion-radio-group/ion-item[.//ion-label[normalize-space()='{option}']]");
@@ -56,6 +60,7 @@ public class CollectionLoadTicketFormPage : BasePage
     private By LongitudeInput => By.XPath("//app-form-detail//app-locationinput//input[@placeholder='Longitude']");
     private By SelectFromMapLink => By.XPath("//app-form-detail//app-locationinput//u[normalize-space()='tap here']");
     private By MapLoader => By.CssSelector("div.map-loader");
+    private By MapModalTitle => By.XPath("//app-location-selection-modal//ion-title[normalize-space()='Select Location']");
     private By MapConfirmButton => By.XPath("//app-location-selection-modal//ion-button[normalize-space()='Confirm']");
 
     // Review & Submit step, QR alert and QR modal
@@ -73,19 +78,20 @@ public class CollectionLoadTicketFormPage : BasePage
     public void WaitForStep(string stepName, int timeoutSeconds = 15)
     {
         var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds));
-        wait.IgnoreExceptionTypes(typeof(NoSuchElementException), typeof(StaleElementReferenceException));
-        wait.Until(d => d.FindElement(CurrentStepName).Text.Trim() == stepName);
+        wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        wait.Until(d => d.FindElements(CurrentStepName).FirstOrDefault()?.Text.Trim() == stepName);
     }
 
-    public void ClickNext() => ScrollAndClick(FooterButton("Next"));
+    // The floating chat bubble sits on top of the footer's right-hand button
+    public void ClickNext() => ScrollAndClick(FooterButton("Next"), jsClickWhenIntercepted: true);
 
     // -------------------------------------------------------------------------
     // Generic field helpers
     // -------------------------------------------------------------------------
     public string GetFieldValue(string label)
     {
-        var input = Find(FieldInput(label));
-        return input.GetAttribute("value")?.Trim() ?? string.Empty;
+        Find(FieldInput(label));
+        return ReadInputValue(FieldInput(label));
     }
 
     public void EnterFieldValue(string label, string value)
@@ -133,7 +139,19 @@ public class CollectionLoadTicketFormPage : BasePage
         ScrollAndClick(ChoiceDoneButton);
 
         // Wait for the form to auto-fill from the selected truck
-        new WebDriverWait(Driver, TimeSpan.FromSeconds(10)).Until(_ => GetFieldValue("Truck Capacity").Length > 0);
+        var autoFillWait = new WebDriverWait(Driver, TimeSpan.FromSeconds(10));
+        autoFillWait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        try
+        {
+            autoFillWait.Until(_ => GetFieldValue("Truck Capacity").Length > 0);
+        }
+        catch (WebDriverTimeoutException ex)
+        {
+            // Report what the locator actually matched, so a wrong input is obvious from the failure message
+            var matched = string.Join(" | ", Driver.FindElements(FieldInput("Truck Capacity")).Select(i =>
+                $"value='{i.GetDomProperty("value")}' displayed={i.Displayed} outerHTML={i.GetDomProperty("outerHTML")}"));
+            throw new WebDriverTimeoutException($"Truck Capacity was not auto-filled after selecting the truck. Inputs matched: [{matched}]", ex);
+        }
         return truck;
     }
 
@@ -188,29 +206,35 @@ public class CollectionLoadTicketFormPage : BasePage
     {
         ScrollAndClick(LocateButton);
 
-        // Either a real coordinate arrives, or the app offers the "tap here" map fallback (it fills 0,0 as a best estimate)
+        // Prefer GPS: the "tap here" map link can show while the fix is still being acquired, so it only
+        // decides the outcome once GPS has had its full timeout (the app fills 0,0 as a best estimate)
         var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(gpsTimeoutSeconds));
         wait.IgnoreExceptionTypes(typeof(NoSuchElementException), typeof(StaleElementReferenceException));
-        string outcome;
+        bool gotGps;
         try
         {
-            outcome = wait.Until(d =>
-            {
-                if (HasRealCoordinates()) return "gps";
-                return d.FindElements(SelectFromMapLink).Any(e => e.Displayed) ? "map" : null;
-            });
+            gotGps = wait.Until(_ => HasRealCoordinates());
         }
         catch (WebDriverTimeoutException)
         {
-            outcome = "map";
+            gotGps = false;
         }
 
-        if (outcome == "map")
+        if (!gotGps)
         {
             Console.WriteLine("📍 GPS did not return a location. Selecting location from the map...");
             ScrollAndClick(SelectFromMapLink, 30);
-            new WebDriverWait(Driver, TimeSpan.FromSeconds(30))
-                .Until(d => !d.FindElements(MapLoader).Any(e => e.Displayed));
+
+            // Wait for the "Select Location" modal, then for the map tiles to finish loading before confirming
+            if (FindVisible(MapModalTitle, 30) == null)
+            {
+                throw new WebDriverTimeoutException("The 'Select Location' map did not open after tapping 'tap here'.");
+            }
+            var mapWait = new WebDriverWait(Driver, TimeSpan.FromSeconds(45));
+            mapWait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+            mapWait.Until(d => !d.FindElements(MapLoader).Any(e => e.Displayed)
+                               && d.FindElements(MapConfirmButton).Any(e => e.Displayed));
+            Console.WriteLine("🗺️ Map loaded. Confirming location...");
             ScrollAndClick(MapConfirmButton, 30);
         }
 
@@ -218,16 +242,24 @@ public class CollectionLoadTicketFormPage : BasePage
         // Address Number / Street Name are reverse-geocoded from the coordinates
         new WebDriverWait(Driver, TimeSpan.FromSeconds(30)).Until(_ => GetFieldValue("Street Name").Length > 0);
 
-        var location = (Find(LatitudeInput).GetAttribute("value") ?? "", Find(LongitudeInput).GetAttribute("value") ?? "");
+        var location = (ReadInputValue(LatitudeInput), ReadInputValue(LongitudeInput));
         Console.WriteLine($"📍 Location captured: {location.Item1}, {location.Item2} ({GetFieldValue("Address Number")} {GetFieldValue("Street Name")})");
         return location;
     }
 
     private bool HasRealCoordinates()
     {
-        var lat = Driver.FindElements(LatitudeInput).FirstOrDefault()?.GetAttribute("value") ?? "";
-        var lng = Driver.FindElements(LongitudeInput).FirstOrDefault()?.GetAttribute("value") ?? "";
+        var lat = ReadInputValue(LatitudeInput);
+        var lng = ReadInputValue(LongitudeInput);
         return lat.Length > 0 && lng.Length > 0 && !(lat == "0" && lng == "0");
+    }
+
+    // Live value of the visible match (Ionic keeps hidden copies of visited pages); empty when nothing matches
+    private string ReadInputValue(By locator)
+    {
+        var inputs = Driver.FindElements(locator);
+        var input = inputs.FirstOrDefault(i => i.Displayed) ?? inputs.FirstOrDefault();
+        return input?.GetDomProperty("value")?.Trim() ?? string.Empty;
     }
 
     // -------------------------------------------------------------------------
@@ -235,7 +267,7 @@ public class CollectionLoadTicketFormPage : BasePage
     // -------------------------------------------------------------------------
     public void EnterNotes(string notes) => EnterText(NotesTextArea, notes);
 
-    public void Submit() => ScrollAndClick(FooterButton("Submit"));
+    public void Submit() => ScrollAndClick(FooterButton("Submit"), jsClickWhenIntercepted: true);
 
     public void ProceedWithQrGeneration()
     {

@@ -250,7 +250,11 @@ public static class DriverFactory
 
         // ADD THIS LINE AS A BACKUP FOR ANDROID 13/14 ALERTS:
         options.AddAdditionalAppiumOption("appium:autoAcceptAlerts", true);
-        
+
+        // Lets Appium fetch a chromedriver matching each emulator's WebView version (needs the server started with
+        // --allow-insecure=uiautomator2:chromedriver_autodownload), so tests can switch into the WEBVIEW context
+        options.AddAdditionalAppiumOption("appium:chromedriverAutodownload", bool.Parse(appiumSection["ChromedriverAutodownload"] ?? "false"));
+
         // 💡 DYNAMIC TARGET OVERRIDE INSIDE DUAL METHOD TOO
         
         string package = string.Equals(appTarget, "driver", StringComparison.OrdinalIgnoreCase) 

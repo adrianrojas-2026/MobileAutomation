@@ -30,8 +30,15 @@ public class FormsPage : BasePage
         if (FindVisible(FormsMenuItem, 2) == null)
         {
             ScrollAndClick(MenuToggleButton);
+
+            // Clicks during the slide-in animation fall through to the page behind (e.g. Home's time card opens
+            // Time Card), so wait until Ionic reports the menu fully open; isOpen() resolves after the animation
+            new WebDriverWait(Driver, TimeSpan.FromSeconds(10)).Until(_ =>
+                ((IJavaScriptExecutor)Driver).ExecuteScript(
+                    "const m = document.querySelector('ion-menu'); return m ? m.isOpen() : false;") is true);
         }
         ScrollAndClick(FormsMenuItem);
+        Find(By.CssSelector("app-forms-list"));
     }
 
     public void OpenForm(string formName)

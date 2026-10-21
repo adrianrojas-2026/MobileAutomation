@@ -27,8 +27,8 @@ namespace RecoveryTrac.AutomatedTests
                 PermissionHelper.HandleSystemPermissions(androidFlex);
             }
 
-            DriverFactory.SwitchToWebViewContext(DriverFactory.DriverFlex);
-            DriverFactory.SwitchToWebViewContext(DriverFactory.DriverDriver);
+            // Mobile stays in NATIVE_APP context here: Login/PrivacyPolicy/HomePage use native Android locators.
+            // The test switches to the WEBVIEW context right before the Forms flow.
         }
 
         // Runs before BaseTest.Cleanup() quits the drivers, so the failing screen can still be captured
@@ -85,6 +85,14 @@ namespace RecoveryTrac.AutomatedTests
 
             privacyPolicyPage.ClearAllPendingAgreements();
             homePage.CompleteProjectAssignment(wf);
+
+            // Forms page objects use DOM locators; on mobile they run inside the app's WebView (no-op on web)
+            if (driver is OpenQA.Selenium.Appium.Android.AndroidDriver)
+            {
+                DriverFactory.SwitchToWebViewContext(driver);
+                Assert.That(((OpenQA.Selenium.Appium.Android.AndroidDriver)driver).Context, Does.StartWith("WEBVIEW"),
+                    "Could not switch to the Flex WEBVIEW context. Is Appium running with --allow-insecure=uiautomator2:chromedriver_autodownload?");
+            }
 
             // -------------------------------------------------------------------------
             // STEPS 2-3: Forms > Collection Load Ticket, snapshot already-submitted tickets

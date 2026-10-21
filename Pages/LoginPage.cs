@@ -59,56 +59,7 @@ public class LoginPage : BasePage
             LoginTrac(username, password);
 
             // Synchronize on Initial Sync Spinner immediately following submission
-            WaitForInitialSyncToComplete();
+            WaitForSyncToComplete();
         }
-    }
-
-    private void WaitForInitialSyncToComplete()
-    {
-        Console.WriteLine("Waiting for the initial sync spinner to appear...");
-        try
-        {
-            var shortWait = new WebDriverWait(Driver, TimeSpan.FromSeconds(3));
-            shortWait.Until(d =>
-            {
-                if (Driver is OpenQA.Selenium.Appium.Android.AndroidDriver)
-                {
-                    var mobileLoaders = d.FindElements(By.XPath("//*[contains(@text, 'Performing initial sync')] | //*[contains(@text, 'Syncing latest data')]"));
-                    return mobileLoaders.Any(l => l.Displayed);
-                }
-                var webLoaders = d.FindElements(By.CssSelector("ion-loading, .loading-wrapper, .ion-loading-overlay"));
-                return webLoaders.Any(l => l.Displayed);
-            });
-            Console.WriteLine("Sync spinner detected on screen. Waiting for database sync completion...");
-        }
-        catch (WebDriverTimeoutException)
-        {
-            Console.WriteLine("Spinner didn't appear within 3 seconds, assuming instant server response.");
-        }
-
-        Console.WriteLine("Waiting for initial sync spinner to clear (Extended Timeout up to 3 Minutes)...");
-        var longSyncWait = new WebDriverWait(Driver, TimeSpan.FromMinutes(3));
-        longSyncWait.Until(d =>
-        {
-            try
-            {
-                if (Driver is OpenQA.Selenium.Appium.Android.AndroidDriver)
-                {
-                    var mobileLoaders = d.FindElements(By.XPath("//*[contains(@text, 'Performing initial sync')] | //*[contains(@text, 'Syncing latest data')]"));
-                    return mobileLoaders.Count == 0 || !mobileLoaders.Any(l => l.Displayed);
-                }
-                var webLoaders = d.FindElements(By.CssSelector("ion-loading, .loading-wrapper, .ion-loading-overlay"));
-                return webLoaders.Count == 0 || !webLoaders.Any(l => l.Displayed);
-            }
-            catch (StaleElementReferenceException)
-            {
-                return true;
-            }
-        });
-        
-        // 💡 THE BULLETPROOF BUFFER FOR FUTURE SCRIPTS:
-        // Give the background thread pool 2 seconds to ensure no late micro-sync operations pop back up
-        Console.WriteLine("Initial synchronization pass completed. Stability hold active...");
-        System.Threading.Thread.Sleep(2000);
     }
 }
