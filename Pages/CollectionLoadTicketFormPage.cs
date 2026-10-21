@@ -135,7 +135,7 @@ public class CollectionLoadTicketFormPage : BasePage
         Console.WriteLine($"🚚 Selecting truck '{truck.TruckNumber}' (Driver: {truck.DriverName}, Capacity: {truck.TruckCapacity}, Tag: {truck.VehicleTag})");
 
         ScrollIntoView(firstItem);
-        firstItem.FindElement(By.TagName("ion-checkbox")).Click();
+        EnsureChecked(firstItem.FindElement(By.TagName("ion-checkbox")));
         ScrollAndClick(ChoiceDoneButton);
 
         // Wait for the form to auto-fill from the selected truck
@@ -161,7 +161,7 @@ public class CollectionLoadTicketFormPage : BasePage
     public void SelectChoiceOption(string fieldLabel, string option)
     {
         ScrollAndClick(ChoiceSelector(fieldLabel));
-        ScrollAndClick(ChoiceCheckbox(option));
+        EnsureChecked(Find(ChoiceCheckbox(option)));
         ScrollAndClick(ChoiceDoneButton);
         new WebDriverWait(Driver, TimeSpan.FromSeconds(10)).Until(_ => GetChoiceValue(fieldLabel).Contains(option));
     }
@@ -252,6 +252,20 @@ public class CollectionLoadTicketFormPage : BasePage
         var lat = ReadInputValue(LatitudeInput);
         var lng = ReadInputValue(LongitudeInput);
         return lat.Length > 0 && lng.Length > 0 && !(lat == "0" && lng == "0");
+    }
+
+    // The choice picker reopens with the field's current value already ticked, and clicking a ticked checkbox
+    // clears it, so only click when it isn't checked yet
+    private void EnsureChecked(IWebElement checkbox)
+    {
+        ScrollIntoView(checkbox);
+        if (checkbox.GetDomProperty("checked") is "true" or "True")
+        {
+            Console.WriteLine("☑️ Option already selected in the picker. Leaving it checked.");
+            return;
+        }
+        checkbox.Click();
+        new WebDriverWait(Driver, TimeSpan.FromSeconds(5)).Until(_ => checkbox.GetDomProperty("checked") is "true" or "True");
     }
 
     // Live value of the visible match (Ionic keeps hidden copies of visited pages); empty when nothing matches
