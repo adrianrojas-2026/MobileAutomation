@@ -1,0 +1,263 @@
+using MobileAutomation.Tests.Drivers;
+using OpenQA.Selenium;
+using OpenQA.Selenium.Appium;
+using OpenQA.Selenium.Appium.Android;
+using OpenQA.Selenium.Chromium;
+using OpenQA.Selenium.Support.UI;
+
+namespace MobileAutomation.Tests.Pages;
+
+// Attributes shown for a truck in the Truck choice list; the form auto-fills its fields from these
+public record TruckOption(string TruckNumber, string DriverName, string TruckCapacity, string VehicleTag);
+
+// Multi-step "Collection Load Ticket" form modal: Truck > Trailer > Collection Information > Location Information > Review & Submit.
+// Fields are located by their visible label so the same locators work in Web mode and in the mobile WEBVIEW context.
+public class CollectionLoadTicketFormPage : BasePage
+{
+    // Default GPS fix used when the browser/emulator location is mocked (Polk City Rd, FL)
+    public const double MockLatitude = 28.1586965;
+    public const double MockLongitude = -81.6926507;
+
+    public CollectionLoadTicketFormPage(IWebDriver driver)
+        : base(driver)
+    {
+    }
+
+    private const string FormModal = "//ion-modal[.//app-form-container]";
+    private const string FieldContainer = "//app-form-detail//div[contains(@class,'element-container')]";
+
+    private By FormTitle => By.XPath($"{FormModal}//ion-title[normalize-space()='Collection Load Ticket']");
+    private By CurrentStepName => By.XPath("//app-form-standard-footer//ion-label[contains(@class,'current-step-name')]");
+    private By FooterButton(string text) => By.XPath(
+        $"//app-form-standard-footer//ion-button[normalize-space()='{text}' and not(@disabled)]");
+
+    private By Field(string label) => By.XPath(
+        $"{FieldContainer}[.//ion-label[contains(normalize-space(.),'{label}')]]");
+    private By FieldInput(string label) => By.XPath(
+        $"{FieldContainer}[.//ion-label[contains(normalize-space(.),'{label}')]]//input");
+    private By RadioOption(string questionLabel, string option) => By.XPath(
+        $"{FieldContainer}[.//ion-label[contains(normalize-space(.),'{questionLabel}')]]" +
+        $"//ion-radio-group/ion-item[.//ion-label[normalize-space()='{option}']]");
+    private By CheckedRadioOption(string questionLabel, string option) => By.XPath(
+        $"{FieldContainer}[.//ion-label[contains(normalize-space(.),'{questionLabel}')]]" +
+        $"//ion-radio-group/ion-item[.//ion-label[normalize-space()='{option}']]//ion-radio[@aria-checked='true' or contains(@class,'radio-checked')]");
+    private By ChoiceSelector(string label) => By.XPath(
+        $"{FieldContainer}[.//app-choiceinput][.//ion-label[contains(normalize-space(.),'{label}')]]//ion-label[contains(@class,'select-value')]");
+
+    // Choice picker modal (Truck, Truck Debris Type, ...)
+    private By ChoiceItems => By.XPath("//app-choice-modal//div[contains(@class,'items')]/ion-item");
+    private By ChoiceCheckbox(string option) => By.XPath(
+        $"//app-choice-modal//div[contains(@class,'items')]/ion-item[.//ion-label[normalize-space()='{option}']]//ion-checkbox");
+    private By ChoiceDoneButton => By.XPath("//app-choice-modal//ion-button[normalize-space()='Done']");
+
+    // Location step
+    private By LocateButton => By.XPath($"{FieldContainer}[.//app-locationinput]//ion-button[.//ion-icon[@name='locate']]");
+    private By LatitudeInput => By.XPath("//app-form-detail//app-locationinput//input[@placeholder='Latitude']");
+    private By LongitudeInput => By.XPath("//app-form-detail//app-locationinput//input[@placeholder='Longitude']");
+    private By SelectFromMapLink => By.XPath("//app-form-detail//app-locationinput//u[normalize-space()='tap here']");
+    private By MapLoader => By.CssSelector("div.map-loader");
+    private By MapConfirmButton => By.XPath("//app-location-selection-modal//ion-button[normalize-space()='Confirm']");
+
+    // Review & Submit step, QR alert and QR modal
+    private By NotesTextArea => By.XPath($"{FieldContainer}[.//ion-label[contains(normalize-space(.),'Notes')]]//textarea");
+    private By GenerateQrAlert => By.XPath("//ion-alert[.//h2[normalize-space()='Generate QR Code']]");
+    private By GenerateQrProceedButton => By.XPath(
+        "//ion-alert[.//h2[normalize-space()='Generate QR Code']]//button[.//span[normalize-space()='Proceed']]");
+    private By QrCodeImage => By.XPath("//app-qr-code-modal//ngx-qrcode//img");
+    private By QrModalCloseButton => By.XPath("//app-qr-code-modal//span[contains(@class,'close_icon')]");
+
+    public bool IsOpen(int timeoutSeconds = 15) => FindVisible(FormTitle, timeoutSeconds) != null;
+
+    public string CurrentStep => Find(CurrentStepName).Text.Trim();
+
+    public void WaitForStep(string stepName, int timeoutSeconds = 15)
+    {
+        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds));
+        wait.IgnoreExceptionTypes(typeof(NoSuchElementException), typeof(StaleElementReferenceException));
+        wait.Until(d => d.FindElement(CurrentStepName).Text.Trim() == stepName);
+    }
+
+    public void ClickNext() => ScrollAndClick(FooterButton("Next"));
+
+    // -------------------------------------------------------------------------
+    // Generic field helpers
+    // -------------------------------------------------------------------------
+    public string GetFieldValue(string label)
+    {
+        var input = Find(FieldInput(label));
+        return input.GetAttribute("value")?.Trim() ?? string.Empty;
+    }
+
+    public void EnterFieldValue(string label, string value)
+    {
+        var input = Find(FieldInput(label));
+        ScrollIntoView(input);
+        input.Clear();
+        input.SendKeys(value);
+        Driver.HideKeyboardIfShown();
+    }
+
+    public void SelectRadio(string questionLabel, string option)
+    {
+        ScrollAndClick(RadioOption(questionLabel, option));
+        Find(CheckedRadioOption(questionLabel, option));
+    }
+
+    public string GetChoiceValue(string label) => Find(ChoiceSelector(label)).Text.Trim();
+
+    // -------------------------------------------------------------------------
+    // Step 1 - Truck
+    // -------------------------------------------------------------------------
+
+    // Opens the Truck picker, ticks the first truck in the list and returns the attributes it advertises
+    public TruckOption SelectFirstTruck()
+    {
+        ScrollAndClick(ChoiceSelector("Truck"));
+
+        var firstItem = new WebDriverWait(Driver, TimeSpan.FromSeconds(15))
+            .Until(d => d.FindElements(ChoiceItems).FirstOrDefault(e => e.Displayed));
+
+        string Attribute(string key) => firstItem
+            .FindElements(By.XPath($".//div[contains(concat(' ',normalize-space(@class),' '),' attribute ')][.//span[contains(@class,'key') and normalize-space()='{key}:']]//span[contains(@class,'value')]"))
+            .FirstOrDefault()?.Text.Trim() ?? string.Empty;
+
+        var truck = new TruckOption(
+            TruckNumber: firstItem.FindElement(By.XPath("./div[contains(@class,'with-attributes')]/ion-label")).Text.Trim(),
+            DriverName: Attribute("Driver Name"),
+            TruckCapacity: Attribute("Truck Capacity"),
+            VehicleTag: Attribute("Vehicle Tag"));
+        Console.WriteLine($"🚚 Selecting truck '{truck.TruckNumber}' (Driver: {truck.DriverName}, Capacity: {truck.TruckCapacity}, Tag: {truck.VehicleTag})");
+
+        ScrollIntoView(firstItem);
+        firstItem.FindElement(By.TagName("ion-checkbox")).Click();
+        ScrollAndClick(ChoiceDoneButton);
+
+        // Wait for the form to auto-fill from the selected truck
+        new WebDriverWait(Driver, TimeSpan.FromSeconds(10)).Until(_ => GetFieldValue("Truck Capacity").Length > 0);
+        return truck;
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 3 - Collection Information
+    // -------------------------------------------------------------------------
+    public void SelectChoiceOption(string fieldLabel, string option)
+    {
+        ScrollAndClick(ChoiceSelector(fieldLabel));
+        ScrollAndClick(ChoiceCheckbox(option));
+        ScrollAndClick(ChoiceDoneButton);
+        new WebDriverWait(Driver, TimeSpan.FromSeconds(10)).Until(_ => GetChoiceValue(fieldLabel).Contains(option));
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 4 - Location Information
+    // -------------------------------------------------------------------------
+
+    // Mocks the device location so the GPS button returns a deterministic fix
+    public void MockGpsLocation(double latitude = MockLatitude, double longitude = MockLongitude)
+    {
+        try
+        {
+            if (Driver is AndroidDriver androidDriver)
+            {
+                androidDriver.Location = new Location { Latitude = latitude, Longitude = longitude, Altitude = 0 };
+            }
+            else if (Driver is ChromiumDriver chromiumDriver)
+            {
+                var origin = new Uri(Driver.Url).GetLeftPart(UriPartial.Authority);
+                chromiumDriver.ExecuteCdpCommand("Browser.grantPermissions", new Dictionary<string, object?>
+                {
+                    ["origin"] = origin,
+                    ["permissions"] = new[] { "geolocation" }
+                });
+                chromiumDriver.ExecuteCdpCommand("Emulation.setGeolocationOverride", new Dictionary<string, object?>
+                {
+                    ["latitude"] = latitude,
+                    ["longitude"] = longitude,
+                    ["accuracy"] = 10
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ Could not mock GPS location ({ex.Message}). The map fallback will be used if needed.");
+        }
+    }
+
+    // Clicks the GPS button; if no precise fix arrives, confirms a location from the map instead
+    public (string Latitude, string Longitude) CaptureLocation(int gpsTimeoutSeconds = 20)
+    {
+        ScrollAndClick(LocateButton);
+
+        // Either a real coordinate arrives, or the app offers the "tap here" map fallback (it fills 0,0 as a best estimate)
+        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(gpsTimeoutSeconds));
+        wait.IgnoreExceptionTypes(typeof(NoSuchElementException), typeof(StaleElementReferenceException));
+        string outcome;
+        try
+        {
+            outcome = wait.Until(d =>
+            {
+                if (HasRealCoordinates()) return "gps";
+                return d.FindElements(SelectFromMapLink).Any(e => e.Displayed) ? "map" : null;
+            });
+        }
+        catch (WebDriverTimeoutException)
+        {
+            outcome = "map";
+        }
+
+        if (outcome == "map")
+        {
+            Console.WriteLine("📍 GPS did not return a location. Selecting location from the map...");
+            ScrollAndClick(SelectFromMapLink, 30);
+            new WebDriverWait(Driver, TimeSpan.FromSeconds(30))
+                .Until(d => !d.FindElements(MapLoader).Any(e => e.Displayed));
+            ScrollAndClick(MapConfirmButton, 30);
+        }
+
+        new WebDriverWait(Driver, TimeSpan.FromSeconds(30)).Until(_ => HasRealCoordinates());
+        // Address Number / Street Name are reverse-geocoded from the coordinates
+        new WebDriverWait(Driver, TimeSpan.FromSeconds(30)).Until(_ => GetFieldValue("Street Name").Length > 0);
+
+        var location = (Find(LatitudeInput).GetAttribute("value") ?? "", Find(LongitudeInput).GetAttribute("value") ?? "");
+        Console.WriteLine($"📍 Location captured: {location.Item1}, {location.Item2} ({GetFieldValue("Address Number")} {GetFieldValue("Street Name")})");
+        return location;
+    }
+
+    private bool HasRealCoordinates()
+    {
+        var lat = Driver.FindElements(LatitudeInput).FirstOrDefault()?.GetAttribute("value") ?? "";
+        var lng = Driver.FindElements(LongitudeInput).FirstOrDefault()?.GetAttribute("value") ?? "";
+        return lat.Length > 0 && lng.Length > 0 && !(lat == "0" && lng == "0");
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 5 - Review & Submit
+    // -------------------------------------------------------------------------
+    public void EnterNotes(string notes) => EnterText(NotesTextArea, notes);
+
+    public void Submit() => ScrollAndClick(FooterButton("Submit"));
+
+    public void ProceedWithQrGeneration()
+    {
+        Find(GenerateQrAlert);
+        ScrollAndClick(GenerateQrProceedButton);
+    }
+
+    // The QR is rendered as a base64 PNG data URL, so the exact image can be stored without a screenshot
+    public byte[] GetQrCodePng()
+    {
+        var img = new WebDriverWait(Driver, TimeSpan.FromSeconds(30)).Until(d =>
+        {
+            var element = d.FindElements(QrCodeImage).FirstOrDefault(e => e.Displayed);
+            return element != null && (element.GetAttribute("src") ?? "").StartsWith("data:image/png;base64,") ? element : null;
+        });
+        var src = img.GetAttribute("src")!;
+        return Convert.FromBase64String(src[(src.IndexOf(',') + 1)..]);
+    }
+
+    public void CloseQrModal()
+    {
+        ScrollAndClick(QrModalCloseButton);
+        new WebDriverWait(Driver, TimeSpan.FromSeconds(15)).Until(d => !d.FindElements(QrCodeImage).Any(e => e.Displayed));
+    }
+}

@@ -28,6 +28,45 @@ public abstract class BasePage
         Find(locator).Click();
     }
 
+    // Centers the element in its scroll container so Ionic footers/toolbars don't intercept the click
+    protected void ScrollIntoView(IWebElement element)
+    {
+        ((IJavaScriptExecutor)Driver).ExecuteScript("arguments[0].scrollIntoView({block: 'center'});", element);
+    }
+
+    // Waits for a visible element, scrolls it into view and clicks it, retrying while overlays/animations intercept the click
+    protected void ScrollAndClick(By locator, int timeoutSeconds = 15)
+    {
+        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds));
+        wait.IgnoreExceptionTypes(typeof(NoSuchElementException), typeof(StaleElementReferenceException),
+            typeof(ElementClickInterceptedException), typeof(ElementNotInteractableException));
+
+        wait.Until(d =>
+        {
+            // Scroll first: Ionic reports content outside the visible scroll area as not displayed
+            var element = d.FindElement(locator);
+            ScrollIntoView(element);
+            if (!element.Displayed) return false;
+            element.Click();
+            return true;
+        });
+    }
+
+    // Returns the first visible match, or null once the timeout elapses
+    protected IWebElement? FindVisible(By locator, int timeoutSeconds)
+    {
+        try
+        {
+            var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds));
+            wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+            return wait.Until(d => d.FindElements(locator).FirstOrDefault(e => e.Displayed));
+        }
+        catch (WebDriverTimeoutException)
+        {
+            return null;
+        }
+    }
+
     protected void EnterText(By locator, string text)
     {
         var element = Find(locator);
