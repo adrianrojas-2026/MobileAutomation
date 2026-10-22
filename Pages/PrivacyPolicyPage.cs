@@ -53,12 +53,19 @@ public class PrivacyPolicyPage : BasePage
         Console.WriteLine("Scanning for active agreement screens (Privacy Policy / Terms of Service)...");
         bool agreementsPending = true;
         int agreementCounter = 0;
+        int attempts = 0;
 
-        while (agreementsPending && agreementCounter < 3)
+        while (agreementsPending && agreementCounter < 3 && attempts++ < 6)
         {
+            // The initial sync overlay can sit on top of the agreement screen (even when no login happened this run);
+            // AGREE taps are swallowed until it clears
+            // On a fresh install the sync starts several seconds after login, so the first pass watches longer for it
+            WaitForSyncToComplete(appearSeconds: agreementCounter == 0 ? 10 : 3);
+            CloseSideMenuIfOpen();
+
             try
             {
-                var agreementWait = new WebDriverWait(Driver, TimeSpan.FromSeconds(3));
+                var agreementWait = new WebDriverWait(Driver, TimeSpan.FromSeconds(5));
                 
                 var agreeBtn = agreementWait.Until(d => 
                 {
@@ -75,11 +82,23 @@ public class PrivacyPolicyPage : BasePage
                 if (agreeBtn != null)
                 {
                     Console.WriteLine($"[Agreement #{agreementCounter + 1}] Found active screen. Clicking 'I AGREE'...");
+                    string routeBefore = CurrentRoute();
                     ClickAgree();
-                    agreementCounter++;
-                    
-                    // Brief pause to allow the network layout rendering to settle
-                    System.Threading.Thread.Sleep(1000); 
+
+                    // Only count the agreement once the app navigates away from it: a tap on a half-visible
+                    // I AGREE (menu re-pinned by the next page) is silently lost
+                    var acceptedWait = new WebDriverWait(Driver, TimeSpan.FromSeconds(10));
+                    acceptedWait.IgnoreExceptionTypes(typeof(WebDriverException));
+                    try
+                    {
+                        acceptedWait.Until(_ => CurrentRoute() != routeBefore);
+                        agreementCounter++;
+                        Console.WriteLine($"[Agreement #{agreementCounter}] Accepted ({routeBefore} -> {CurrentRoute()}).");
+                    }
+                    catch (WebDriverTimeoutException)
+                    {
+                        Console.WriteLine($"[Agreement #{agreementCounter + 1}] Still on {routeBefore} after clicking 'I AGREE'. Retrying...");
+                    }
                 }
                 else
                 {
@@ -88,7 +107,9 @@ public class PrivacyPolicyPage : BasePage
             }
             catch (WebDriverTimeoutException)
             {
-                Console.WriteLine("No active agreement screens detected. Moving forward to Dashboard verification.");
+                var matches = Driver.FindElements(AgreeButton);
+                Console.WriteLine("No active agreement screens detected. Moving forward to Dashboard verification. " +
+                                  $"(route {CurrentRoute()}, I AGREE matches: [{string.Join(", ", matches.Select(m => $"displayed={m.Displayed} enabled={m.Enabled}"))}])");
                 agreementsPending = false;
             }
         }

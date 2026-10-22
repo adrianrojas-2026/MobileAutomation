@@ -125,8 +125,11 @@ public class HomePage : BasePage
         {
             if (DriverFactory.DriverFlex is not OpenQA.Selenium.Appium.Android.AndroidDriver)
             {
-                // Web Browser locator: Targets the item option text inside the popover overlay
-                return By.XPath("//*[contains(text(), 'PROJECT MANAGER ASSIGNED')]");
+                // Web Browser locator: option inside the searchable picker. 'PROJECT MANAGER ASSIGNED' is only offered for
+                // pre-assigned tasks; 'Demo Labor Category' is offered for 'Demo Task' when the assignment is picked manually.
+                return By.XPath(
+                    "//app-ion-select-searchable//ion-item[.//ion-label[contains(normalize-space(.), 'PROJECT MANAGER ASSIGNED')]] " +
+                    "| //app-ion-select-searchable//ion-item[.//ion-label[contains(normalize-space(.), 'Demo Labor Category')]]");
             }
             // Mobile Android: Target visible items from your screenshot list 
             // (e.g., 'DEVELOPER' or 'Demo Labor Category') or grab any valid option row
@@ -199,6 +202,10 @@ public class HomePage : BasePage
     
     public void CompleteProjectAssignment(OpenQA.Selenium.Support.UI.WebDriverWait wf)
     {
+        // The initial sync overlay blocks the dashboard (and the pencil) until it finishes
+        WaitForSyncToComplete();
+        CloseSideMenuIfOpen();
+
         // 1. Guard Clause: Skip if already configured
         if (IsProjectAlreadyConfigured())
         {
@@ -211,11 +218,15 @@ public class HomePage : BasePage
         // 2. Open the Assignment Modal
         OpenAssignmentModal(wf);
         
-        // 3. Run Platform-Specific Preamble (Mobile only handles)
+        // 3. Run Platform-Specific Preamble: Project and Task must be chosen before Labor Category is enabled
         bool isMobileMode = IsMobileSession();
         if (isMobileMode)
         {
             HandleMobileFormPreamble(wf);
+        }
+        else
+        {
+            HandleWebFormPreamble(wf);
         }
 
         // 4. Shared Step: Select Labor Category / Position
@@ -251,7 +262,7 @@ public class HomePage : BasePage
     private void OpenAssignmentModal(OpenQA.Selenium.Support.UI.WebDriverWait wf)
     {
         // 1. Click the edit assignment pencil icon to bring up the modal
-        var pencilBtn = wf.Until(d => d.FindElement(EditAssignmentPencil));
+        var pencilBtn = wf.Until(d => d.FindElements(EditAssignmentPencil).FirstOrDefault());
         pencilBtn.Click();
         System.Threading.Thread.Sleep(800); // Animation buffer
 
@@ -331,6 +342,65 @@ public class HomePage : BasePage
         System.Threading.Thread.Sleep(500); // Micro stabilization pause
     }
 
+    // Web Browser: a fresh browser profile has no cached assignment while the user is clocked out,
+    // so Project starts empty and Task / Labor Category stay hidden until a Project is picked.
+    private void HandleWebFormPreamble(OpenQA.Selenium.Support.UI.WebDriverWait wf)
+    {
+        string projectText = wf.Until(d => d.FindElement(WebAssignmentFieldValue("Project"))).Text.Trim();
+        if (projectText.Contains("DEMO-TESTING ONLY"))
+        {
+            Console.WriteLine($"⏩ Project already selected ('{projectText}'). Skipping Project/Task selection.");
+            return;
+        }
+
+        Console.WriteLine("🌐 Web mode: Project is empty. Selecting Project and Task fields...");
+        SelectWebAssignmentOption(wf, "Project", "DEMO-TESTING ONLY");
+        SelectWebAssignmentOption(wf, "Task", "Demo Task");
+    }
+
+    // Value label of a Change Assignment field (Project, Task, Labor Category, Work State)
+    private static By WebAssignmentFieldValue(string fieldLabel) => By.XPath(
+        $"//app-project-task-selection//ion-col[contains(@class,'change-project')][.//ion-label[normalize-space()='{fieldLabel}']]" +
+        "//ion-label[contains(@class,'projectLabel')]");
+
+    // optionText null picks the first option in the list
+    private void SelectWebAssignmentOption(OpenQA.Selenium.Support.UI.WebDriverWait wf, string fieldLabel, string? optionText)
+    {
+        wf.Until(d =>
+        {
+            try
+            {
+                var field = d.FindElement(WebAssignmentFieldValue(fieldLabel));
+                if (field.Displayed) { field.Click(); return true; }
+                return false;
+            }
+            catch (Exception) { return false; }
+        });
+
+        wf.Until(d =>
+        {
+            try
+            {
+                // Options are role=listitem; the picker's first ion-item is its "Search:" input
+                var option = d.FindElements(By.XPath(optionText == null
+                        ? "//app-ion-select-searchable//ion-item[@role='listitem']"
+                        : $"//app-ion-select-searchable//ion-item[@role='listitem'][.//ion-label[contains(normalize-space(.),'{optionText}')]]"))
+                    .FirstOrDefault(o => o.Displayed);
+                if (option == null) return false;
+                option.Click();
+                return true;
+            }
+            catch (Exception) { return false; }
+        });
+
+        // Wait for the picker to close and the field to show the chosen value
+        wf.Until(d =>
+        {
+            string value = d.FindElement(WebAssignmentFieldValue(fieldLabel)).Text.Trim();
+            return optionText == null ? value.Length > 0 : value.Contains(optionText);
+        });
+    }
+
     private void SelectLaborCategory(OpenQA.Selenium.Support.UI.WebDriverWait wf)
     {
         var laborDropdown = wf.Until(d => d.FindElement(LaborCategoryDropdown));
@@ -353,7 +423,22 @@ public class HomePage : BasePage
     private void SelectWorkState(OpenQA.Selenium.Support.UI.WebDriverWait wf)
     {
         Console.WriteLine("🌐📱 Validating mandatory Work State field status...");
-        
+
+        // Web: Work State is the same picker as Project/Task. The generic WorkStateDropdown locator matches the
+        // container wrapping the whole form, so reading/clicking it neither sees the value nor opens the picker
+        if (!IsMobileSession())
+        {
+            string webStateText = wf.Until(d => d.FindElement(WebAssignmentFieldValue("Work State"))).Text.Trim();
+            if (webStateText.Length > 0)
+            {
+                Console.WriteLine($"⏩ Work State already selected ('{webStateText}'). Skipping.");
+                return;
+            }
+            Console.WriteLine("🌐 Web mode: Work State is empty. Selecting 'Florida'...");
+            SelectWebAssignmentOption(wf, "Work State", "Florida");
+            return;
+        }
+
         // 1. Safely extract the outer wrapper text layer first
         var stateField = wf.Until(d => d.FindElement(WorkStateDropdown));
         string currentStateText = stateField.Text?.ToLower().Trim() ?? string.Empty;

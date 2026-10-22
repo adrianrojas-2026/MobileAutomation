@@ -30,9 +30,8 @@ namespace RecoveryTrac.AutomatedTests
                 PermissionHelper.HandleSystemPermissions(androidFlex);
             }
 
-            // 💡 NEW: Automatically pierce into the active WebView engine layer for the mobile emulators
-            DriverFactory.SwitchToWebViewContext(DriverFactory.DriverFlex);
-            DriverFactory.SwitchToWebViewContext(DriverFactory.DriverDriver);
+            // Mobile stays in NATIVE_APP context: Login/PrivacyPolicy/HomePage use native Android locators.
+            // (The previous WEBVIEW switch only ever failed silently; with chromedriver autodownload enabled it would succeed and break them.)
         }
 
         // Clears thread-static allocations immediately after this class finishes executing
