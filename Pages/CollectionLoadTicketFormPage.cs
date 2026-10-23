@@ -1,3 +1,4 @@
+using MobileAutomation.Tests.Utilities;
 using MobileAutomation.Tests.Drivers;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Appium;
@@ -23,17 +24,21 @@ public class CollectionLoadTicketFormPage : BasePage
     {
     }
 
-    private const string FormModal = "//ion-modal[.//app-form-container]";
+    protected const string FormModal = "//ion-modal[.//app-form-container]";
     private const string FieldContainer = "//app-form-detail//div[contains(@class,'element-container')]";
 
-    private By FormTitle => By.XPath($"{FormModal}//ion-title[normalize-space()='Collection Load Ticket']");
+    // The modal was renamed from "Collection Load Ticket" to "Load - Collection"; accept both while environments differ
+    // Form pages that share this modal layout (e.g. Load - Disposal) override the title
+    protected virtual IReadOnlyList<string> FormTitles => ["Load - Collection", "Collection Load Ticket"];
+    private By FormTitle => By.XPath(
+        $"{FormModal}//ion-header//*[{string.Join(" or ", FormTitles.Select(t => $"normalize-space()='{t}'"))}]");
     private By CurrentStepName => By.XPath("//app-form-standard-footer//ion-label[contains(@class,'current-step-name')]");
-    private By FooterButton(string text) => By.XPath(
+    protected By FooterButton(string text) => By.XPath(
         $"//app-form-standard-footer//ion-button[translate(normalize-space(),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{text.ToUpperInvariant()}' and not(@disabled)]");
 
     // Innermost field container owning the label: a wrapping container (step group, ...) also contains the label,
     // and its first //input belongs to a different field
-    private static string LabelledField(string label) =>
+    protected static string LabelledField(string label) =>
         $"{FieldContainer}[.//ion-label[contains(normalize-space(.),'{label}')]]" +
         $"[not(.//div[contains(@class,'element-container')][.//ion-label[contains(normalize-space(.),'{label}')]])]";
 
@@ -45,14 +50,15 @@ public class CollectionLoadTicketFormPage : BasePage
     private By CheckedRadioOption(string questionLabel, string option) => By.XPath(
         $"{FieldContainer}[.//ion-label[contains(normalize-space(.),'{questionLabel}')]]" +
         $"//ion-radio-group/ion-item[.//ion-label[normalize-space()='{option}']]//ion-radio[@aria-checked='true' or contains(@class,'radio-checked')]");
-    private By ChoiceSelector(string label) => By.XPath(
+    protected By ChoiceSelector(string label) => By.XPath(
         $"{FieldContainer}[.//app-choiceinput][.//ion-label[contains(normalize-space(.),'{label}')]]//ion-label[contains(@class,'select-value')]");
 
     // Choice picker modal (Truck, Truck Debris Type, ...)
-    private By ChoiceItems => By.XPath("//app-choice-modal//div[contains(@class,'items')]/ion-item");
+    protected By ChoiceItems => By.XPath("//app-choice-modal//div[contains(@class,'items')]/ion-item");
+    // Case-insensitive: the options are now listed in upper case (e.g. "VEGETATIVE/WOODY")
     private By ChoiceCheckbox(string option) => By.XPath(
-        $"//app-choice-modal//div[contains(@class,'items')]/ion-item[.//ion-label[normalize-space()='{option}']]//ion-checkbox");
-    private By ChoiceDoneButton => By.XPath("//app-choice-modal//ion-button[normalize-space()='Done']");
+        $"//app-choice-modal//div[contains(@class,'items')]/ion-item[.//ion-label[translate(normalize-space(),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ')='{option.ToUpperInvariant()}']]//ion-checkbox");
+    protected By ChoiceDoneButton => By.XPath("//app-choice-modal//ion-button[normalize-space()='Done']");
 
     // Location step
     private By LocateButton => By.XPath($"{FieldContainer}[.//app-locationinput]//ion-button[.//ion-icon[@name='locate']]");
@@ -64,7 +70,9 @@ public class CollectionLoadTicketFormPage : BasePage
     private By MapConfirmButton => By.XPath("//app-location-selection-modal//ion-button[normalize-space()='Confirm']");
 
     // Review & Submit step, QR alert and QR modal
-    private By NotesTextArea => By.XPath($"{FieldContainer}[.//ion-label[contains(normalize-space(.),'Notes')]]//textarea");
+    // "Notes & Comments" is now a single-line input; older form versions used a textarea
+    private By NotesTextArea => By.XPath(
+        $"{FieldContainer}[.//ion-label[contains(normalize-space(.),'Notes')]]//*[self::textarea or self::input]");
     private By GenerateQrAlert => By.XPath("//ion-alert[.//h2[normalize-space()='Generate QR Code']]");
     private By GenerateQrProceedButton => By.XPath(
         "//ion-alert[.//h2[normalize-space()='Generate QR Code']]//button[.//span[normalize-space()='Proceed']]");
@@ -85,9 +93,15 @@ public class CollectionLoadTicketFormPage : BasePage
     // The floating chat bubble sits on top of the footer's right-hand button
     public void ClickNext() => ScrollAndClick(FooterButton("Next"), jsClickWhenIntercepted: true);
 
+    // NEXT is rendered disabled until every required field on the step is answered
+    public bool IsNextEnabled(int timeoutSeconds = 15) => FindVisible(FooterButton("Next"), timeoutSeconds) != null;
+
     // -------------------------------------------------------------------------
     // Generic field helpers
     // -------------------------------------------------------------------------
+    // For fields that only some versions of the form definition include
+    public bool HasField(string label) => Driver.FindElements(FieldInput(label)).Count > 0;
+
     public string GetFieldValue(string label)
     {
         Find(FieldInput(label));
@@ -152,18 +166,229 @@ public class CollectionLoadTicketFormPage : BasePage
                 $"value='{i.GetDomProperty("value")}' displayed={i.Displayed} outerHTML={i.GetDomProperty("outerHTML")}"));
             throw new WebDriverTimeoutException($"Truck Capacity was not auto-filled after selecting the truck. Inputs matched: [{matched}]", ex);
         }
+
+        // The "Search for Truck" picker no longer lists every attribute (Truck Capacity / Vehicle Tag are missing),
+        // so take those from the auto-filled fields; the caller verifies them against the picked truck
+        truck = truck with
+        {
+            DriverName = string.IsNullOrEmpty(truck.DriverName) ? GetFieldValue("Driver Name") : truck.DriverName,
+            TruckCapacity = string.IsNullOrEmpty(truck.TruckCapacity) ? GetFieldValue("Truck Capacity") : truck.TruckCapacity,
+            VehicleTag = string.IsNullOrEmpty(truck.VehicleTag) ? GetFieldValue("Truck License Plate") : truck.VehicleTag
+        };
         return truck;
     }
 
     // -------------------------------------------------------------------------
-    // Step 3 - Collection Information
+    // Step 3 - Collection Start
     // -------------------------------------------------------------------------
+
+    // Every <input type=file> on the page, including ones inside shadow roots (e.g. pwa-camera-modal)
+    private const string FindFileInputsScript =
+        "const found = [];" +
+        "const walk = root => root.querySelectorAll('*').forEach(el => {" +
+        "  if (el.matches('input[type=file]')) found.push(el);" +
+        "  if (el.shadowRoot) walk(el.shadowRoot);" +
+        "});" +
+        "walk(document);" +
+        "return found;";
+
+    // Collection photos use an "ADD" tile; other photo fields put an Add/Take Photo button beside the label
+    private By PhotoAddButton(string label) => By.XPath(
+        $"{LabelledField(label)}//ion-button[" +
+        string.Join(" or ", new[] { "ADD", "PHOTO", "CAMERA", "UPLOAD" }.Select(t =>
+            $"contains(translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'{t}')")) +
+        " or .//ion-icon[contains(@name,'camera') or contains(@name,'add') or contains(@name,'image')]]");
+
+    // Attaches an image to a photo field (e.g. "Photo of First Debris Pile") and waits for the step to accept it
+    public void AddPhoto(string fieldLabel, string imagePath)
+    {
+        if (Driver is AndroidDriver androidDriver)
+        {
+            AddPhotoFromGallery(androidDriver, fieldLabel, imagePath);
+            WaitForPhotoAccepted();
+            return;
+        }
+
+        string fullPath = Path.GetFullPath(imagePath);
+        var chromium = Driver as ChromiumDriver;
+
+        // ADD opens the OS file chooser; intercept it so the dialog never shows and the file is set on the input instead
+        chromium?.ExecuteCdpCommand("Page.setInterceptFileChooserDialog", new Dictionary<string, object?> { ["enabled"] = true });
+        try
+        {
+            ScrollAndClick(PhotoAddButton(fieldLabel), jsClickWhenIntercepted: true);
+
+            var fileInput = new WebDriverWait(Driver, TimeSpan.FromSeconds(10)).Until(d =>
+                (((IJavaScriptExecutor)d).ExecuteScript(FindFileInputsScript) as IReadOnlyCollection<object>)?
+                    .OfType<IWebElement>().LastOrDefault());
+
+            // Capacitor's camera fallback creates the input hidden; Selenium only types into rendered inputs
+            ((IJavaScriptExecutor)Driver).ExecuteScript(
+                "arguments[0].hidden = false; arguments[0].style.display = 'block'; arguments[0].style.visibility = 'visible';", fileInput);
+            fileInput!.SendKeys(fullPath);
+            Console.WriteLine($"📷 Attached '{Path.GetFileName(fullPath)}' to '{fieldLabel}'.");
+        }
+        finally
+        {
+            chromium?.ExecuteCdpCommand("Page.setInterceptFileChooserDialog", new Dictionary<string, object?> { ["enabled"] = false });
+        }
+
+        WaitForPhotoAccepted();
+    }
+
+    // NEXT (SUBMIT on the last step) stays disabled until the required photo is stored
+    private void WaitForPhotoAccepted() =>
+        new WebDriverWait(Driver, TimeSpan.FromSeconds(30)).Until(d =>
+            d.FindElements(FooterButton("Next")).Concat(d.FindElements(FooterButton("Submit"))).Any(e => e.Displayed));
+
+    // "Add Photo" action sheet (Take Photo / Select from Gallery) the app shows on a device
+    private By SelectFromGalleryButton => By.XPath(
+        "//ion-action-sheet//button[contains(translate(normalize-space(.),'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'GALLERY')]");
+
+    // First photo in the Android photo picker (Android 13+), or in the documents/gallery picker older versions open
+    private static readonly By PickerFirstPhoto = By.XPath(
+        "(//*[contains(@resource-id,'icon_thumbnail') or contains(@resource-id,'id/thumbnail')]" +
+        " | //android.widget.ImageView[contains(@content-desc,'Photo taken') or contains(@content-desc,'Image')])[1]");
+
+    // Emulator camera app (ACTION_IMAGE_CAPTURE): shutter, then the review screen's confirm button
+    private static readonly By CameraShutterButton = By.XPath(
+        "//*[contains(@resource-id,'shutter_button')] | //*[@content-desc='Shutter' or @content-desc='Take photo' or @content-desc='Take picture']");
+    private static readonly By CameraConfirmButton = By.XPath(
+        "//*[contains(@resource-id,'done_button') or contains(@resource-id,'btn_done') or contains(@resource-id,'confirm_button')]" +
+        " | //*[@content-desc='Done' or @content-desc='OK' or @content-desc='Confirm']");
+    // First-run camera prompts (e.g. "Remember photo locations?")
+    private static readonly By CameraOnboardingButton = By.XPath(
+        "//android.widget.Button[@text='NEXT' or @text='Next' or @text='No thanks' or @text='NO THANKS' or @text='OK' or @text='Got it' or @text='GOT IT']");
+
+    // Device flow: ADD opens either the "Add Photo" sheet (gallery allowed) or the camera directly, when the field
+    // blocks gallery uploads (options.media.preventUploadFromGallery)
+    private void AddPhotoFromGallery(AndroidDriver androidDriver, string fieldLabel, string imagePath)
+    {
+        ScrollAndClick(PhotoAddButton(fieldLabel), jsClickWhenIntercepted: true);
+        bool galleryAllowed = FindVisible(SelectFromGalleryButton, 5) != null;
+
+        string webContext = androidDriver.Context;
+        if (galleryAllowed)
+        {
+            string udid = AdbHelper.GetUdid(androidDriver)
+                ?? throw new InvalidOperationException("Could not tell which device the Appium session is on.");
+            string devicePath = AdbHelper.PushToGallery(udid, imagePath);
+            ScrollAndClick(SelectFromGalleryButton, jsClickWhenIntercepted: true);
+            Console.WriteLine($"📷 '{fieldLabel}' allows gallery uploads. Picking '{devicePath}'...");
+        }
+        else
+        {
+            Console.WriteLine($"📷 '{fieldLabel}' requires a live photo. Taking one with the emulator camera...");
+        }
+
+        // Picker and camera are native activities on top of the app's WebView
+        androidDriver.Context = "NATIVE_APP";
+        try
+        {
+            if (galleryAllowed)
+            {
+                var photo = FindVisible(PickerFirstPhoto, 30)
+                    ?? throw new NoSuchElementException("The Android photo picker did not show any photo to select.");
+                photo.Click();
+            }
+            else
+            {
+                TakeCameraPhoto(androidDriver);
+            }
+        }
+        finally
+        {
+            // The app's WebView comes back once the picker/camera returns its result
+            new WebDriverWait(androidDriver, TimeSpan.FromSeconds(30)).Until(_ => androidDriver.Contexts.Contains(webContext));
+            androidDriver.Context = webContext;
+        }
+    }
+
+    private static void TakeCameraPhoto(AndroidDriver androidDriver)
+    {
+        // Clear the camera permission dialog and first-run prompts until the shutter is usable
+        var shutterWait = new WebDriverWait(androidDriver, TimeSpan.FromSeconds(45));
+        shutterWait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        var shutter = shutterWait.Until(d =>
+        {
+            PermissionHelper.HandleSystemPermissions(androidDriver);
+            d.FindElements(CameraOnboardingButton).FirstOrDefault(b => b.Displayed)?.Click();
+            return d.FindElements(CameraShutterButton).FirstOrDefault(b => b.Displayed && b.Enabled);
+        });
+        Thread.Sleep(1000); // Let the preview start; an early tap can be ignored
+        shutter.Click();
+
+        var confirmWait = new WebDriverWait(androidDriver, TimeSpan.FromSeconds(30));
+        confirmWait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        confirmWait.Until(d => d.FindElements(CameraConfirmButton).FirstOrDefault(b => b.Displayed))!.Click();
+        Console.WriteLine("📷 Photo taken with the emulator camera.");
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 4 - Collection Information
+    // -------------------------------------------------------------------------
+    // Wheel picker overlay (e.g. Load Call (%): 0, 5, 10 ... with CANCEL / CONFIRM). Its columns only move by
+    // scroll/drag, so the option is selected through the picker's column model and then confirmed
+    private const string SelectPickerOptionScript =
+        "const picker = [...document.querySelectorAll('ion-picker, ion-picker-legacy')].pop();" +
+        "if (!picker || !picker.columns || !picker.columns.length) return 'no-picker';" +
+        "const col = picker.columns[0];" +
+        "const i = col.options.findIndex(o => String(o.text).trim() === arguments[0] || String(o.value) === arguments[0]);" +
+        "if (i < 0) return 'options: ' + col.options.map(o => o.text).join(', ');" +
+        "col.selectedIndex = i;" +
+        "picker.columns = [...picker.columns];" +
+        "return 'ok';";
+
+    private By PickerConfirmButton => By.XPath(
+        "(//ion-picker | //ion-picker-legacy)//button[translate(normalize-space(),'confirm','CONFIRM')='CONFIRM']");
+
+    public void SelectPickerValue(string fieldLabel, string value)
+    {
+        var field = Driver.FindElements(FieldInput(fieldLabel)).FirstOrDefault(e => e.Displayed) ?? Find(Field(fieldLabel));
+        ScrollIntoView(field);
+        field.Click();
+
+        var result = new WebDriverWait(Driver, TimeSpan.FromSeconds(10)).Until(d =>
+        {
+            var outcome = ((IJavaScriptExecutor)d).ExecuteScript(SelectPickerOptionScript, value) as string;
+            return outcome == "no-picker" ? null : outcome;
+        });
+        if (result != "ok")
+        {
+            throw new InvalidOperationException($"'{value}' is not an option of the '{fieldLabel}' picker ({result}).");
+        }
+
+        Thread.Sleep(300); // Column re-render settle before confirming
+        ScrollAndClick(PickerConfirmButton, jsClickWhenIntercepted: true);
+        new WebDriverWait(Driver, TimeSpan.FromSeconds(10)).Until(_ => GetFieldValue(fieldLabel).Contains(value));
+        Console.WriteLine($"🎚️ '{fieldLabel}' set to {GetFieldValue(fieldLabel)}.");
+    }
+
+    // Ticks the first option in a choice picker (e.g. Disposal Site) and returns its name
+    public string SelectFirstChoiceOption(string fieldLabel)
+    {
+        ScrollAndClick(ChoiceSelector(fieldLabel));
+
+        var firstItem = new WebDriverWait(Driver, TimeSpan.FromSeconds(15))
+            .Until(d => d.FindElements(ChoiceItems).FirstOrDefault(e => e.Displayed));
+        string name = firstItem.FindElement(By.XPath("./div[contains(@class,'with-attributes')]/ion-label")).Text.Trim();
+        Console.WriteLine($"☑️ Selecting '{name}' for '{fieldLabel}'.");
+
+        EnsureChecked(firstItem.FindElement(By.TagName("ion-checkbox")));
+        ScrollAndClick(ChoiceDoneButton);
+        new WebDriverWait(Driver, TimeSpan.FromSeconds(10)).Until(_ => GetChoiceValue(fieldLabel).Contains(name, StringComparison.OrdinalIgnoreCase));
+        return name;
+    }
+
     public void SelectChoiceOption(string fieldLabel, string option)
     {
         ScrollAndClick(ChoiceSelector(fieldLabel));
-        EnsureChecked(Find(ChoiceCheckbox(option)));
+        // Ionic can keep a hidden copy of the picker in the DOM, so take the visible checkbox
+        var checkbox = FindVisible(ChoiceCheckbox(option), 15)
+            ?? throw new NoSuchElementException($"Option '{option}' was not displayed in the '{fieldLabel}' picker.");
+        EnsureChecked(checkbox);
         ScrollAndClick(ChoiceDoneButton);
-        new WebDriverWait(Driver, TimeSpan.FromSeconds(10)).Until(_ => GetChoiceValue(fieldLabel).Contains(option));
+        new WebDriverWait(Driver, TimeSpan.FromSeconds(10)).Until(_ => GetChoiceValue(fieldLabel).Contains(option, StringComparison.OrdinalIgnoreCase));
     }
 
     // -------------------------------------------------------------------------
@@ -177,7 +402,30 @@ public class CollectionLoadTicketFormPage : BasePage
         {
             if (Driver is AndroidDriver androidDriver)
             {
-                androidDriver.Location = new Location { Latitude = latitude, Longitude = longitude, Altitude = 0 };
+                // The location field only accepts a fix within 15 ft; a plain mocked location reports ~16 ft, so set
+                // the accuracy explicitly. "mobile:" commands run in the native context
+                string context = androidDriver.Context;
+                androidDriver.Context = "NATIVE_APP";
+                try
+                {
+                    androidDriver.ExecuteScript("mobile: setGeolocation", new Dictionary<string, object>
+                    {
+                        ["latitude"] = latitude,
+                        ["longitude"] = longitude,
+                        ["altitude"] = 0,
+                        ["accuracy"] = 1
+                    });
+                }
+                catch (WebDriverException)
+                {
+                    // Older UiAutomator2 drivers lack mobile: setGeolocation; the plain location is less accurate, so
+                    // the location step may still fall back to the map
+                    androidDriver.Location = new OpenQA.Selenium.Appium.Location { Latitude = latitude, Longitude = longitude, Altitude = 0 };
+                }
+                finally
+                {
+                    androidDriver.Context = context;
+                }
             }
             else if (Driver is ChromiumDriver chromiumDriver)
             {
@@ -235,7 +483,8 @@ public class CollectionLoadTicketFormPage : BasePage
             mapWait.Until(d => !d.FindElements(MapLoader).Any(e => e.Displayed)
                                && d.FindElements(MapConfirmButton).Any(e => e.Displayed));
             Console.WriteLine("🗺️ Map loaded. Confirming location...");
-            ScrollAndClick(MapConfirmButton, 30);
+            // On a phone the floating chat bubble sits on top of CONFIRM
+            ScrollAndClick(MapConfirmButton, 30, jsClickWhenIntercepted: true);
         }
 
         new WebDriverWait(Driver, TimeSpan.FromSeconds(30)).Until(_ => HasRealCoordinates());
@@ -256,7 +505,7 @@ public class CollectionLoadTicketFormPage : BasePage
 
     // The choice picker reopens with the field's current value already ticked, and clicking a ticked checkbox
     // clears it, so only click when it isn't checked yet
-    private void EnsureChecked(IWebElement checkbox)
+    protected void EnsureChecked(IWebElement checkbox)
     {
         ScrollIntoView(checkbox);
         if (checkbox.GetDomProperty("checked") is "true" or "True")
@@ -264,7 +513,15 @@ public class CollectionLoadTicketFormPage : BasePage
             Console.WriteLine("☑️ Option already selected in the picker. Leaving it checked.");
             return;
         }
-        checkbox.Click();
+        try
+        {
+            checkbox.Click();
+        }
+        catch (Exception ex) when (ex is ElementNotInteractableException or ElementClickInterceptedException)
+        {
+            // The picker modal can still be animating in; ion-checkbox toggles on a DOM click event as well
+            ((IJavaScriptExecutor)Driver).ExecuteScript("arguments[0].click();", checkbox);
+        }
         new WebDriverWait(Driver, TimeSpan.FromSeconds(5)).Until(_ => checkbox.GetDomProperty("checked") is "true" or "True");
     }
 
@@ -282,6 +539,8 @@ public class CollectionLoadTicketFormPage : BasePage
     public void EnterNotes(string notes) => EnterText(NotesTextArea, notes);
 
     public void Submit() => ScrollAndClick(FooterButton("Submit"), jsClickWhenIntercepted: true);
+
+    public bool IsGenerateQrPromptShown(int timeoutSeconds = 10) => FindVisible(GenerateQrAlert, timeoutSeconds) != null;
 
     public void ProceedWithQrGeneration()
     {
@@ -304,6 +563,9 @@ public class CollectionLoadTicketFormPage : BasePage
     public void CloseQrModal()
     {
         ScrollAndClick(QrModalCloseButton);
-        new WebDriverWait(Driver, TimeSpan.FromSeconds(15)).Until(d => !d.FindElements(QrCodeImage).Any(e => e.Displayed));
+        // The modal is torn down while it is being checked; a stale image just means it is closing, so poll again
+        var closedWait = new WebDriverWait(Driver, TimeSpan.FromSeconds(15));
+        closedWait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        closedWait.Until(d => !d.FindElements(QrCodeImage).Any(e => e.Displayed));
     }
 }

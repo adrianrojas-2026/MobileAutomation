@@ -40,6 +40,8 @@ public class ClockInPage : BasePage
 
         // Wait for the modal to close before handing control back to the form flow
         var wait = new OpenQA.Selenium.Support.UI.WebDriverWait(Driver, TimeSpan.FromSeconds(30));
+        // The modal can be removed mid-check; poll again instead of failing on the stale element
+        wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
         wait.Until(d => !d.FindElements(By.XPath(ClockInModal)).Any(e => e.Displayed));
         return true;
     }

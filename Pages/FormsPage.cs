@@ -41,6 +41,15 @@ public class FormsPage : BasePage
         Find(By.CssSelector("app-forms-list"));
     }
 
+    // ALL FORMS footer button on a form's summary page: back to the form definition list
+    public void OpenAllForms()
+    {
+        ScrollAndClick(By.XPath(
+            "//app-form-summary//ion-button[contains(translate(normalize-space(.),'allforms','ALLFORMS'),'ALL FORMS')]"),
+            jsClickWhenIntercepted: true);
+        Find(By.CssSelector("app-forms-list"));
+    }
+
     public void OpenForm(string formName)
     {
         Console.WriteLine($"Opening form definition '{formName}'...");
@@ -81,6 +90,15 @@ public class FormsPage : BasePage
             }
         }
         return values;
+    }
+
+    // QR icon in the top-right corner of a submitted card (next to Print on Load - Disposal); opens the QR modal
+    public void OpenSubmittedCardQr(string ticketId)
+    {
+        ScrollAndClick(By.XPath(
+            $"//app-form-summary//ion-card[.//ion-card-subtitle[normalize-space()='{ticketId}']]" +
+            "//*[self::ion-button or self::ion-icon][contains(@name,'qr') or .//ion-icon[contains(@name,'qr')]]"),
+            jsClickWhenIntercepted: true);
     }
 
     // Sync runs in the background after submit; wait until the card shows the "Synced" status
