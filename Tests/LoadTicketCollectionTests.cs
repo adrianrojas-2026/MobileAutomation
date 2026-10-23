@@ -206,7 +206,7 @@ namespace RecoveryTrac.AutomatedTests
             // -------------------------------------------------------------------------
             ticketForm.ClickNext();
             ticketForm.WaitForStep("Review & Submit");
-            ticketForm.EnterNotes($"Automated test - {nameof(Test_CreateNewCollectionLoadTicket_And_VerifySubmittedSynced_E2E)} {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            ticketForm.EnterNotes($"Automated test - {nameof(Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E)} {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             ticketForm.Submit();
             ticketForm.ProceedWithQrGeneration();
 
