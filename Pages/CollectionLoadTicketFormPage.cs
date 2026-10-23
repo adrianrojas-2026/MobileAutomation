@@ -452,16 +452,22 @@ public class CollectionLoadTicketFormPage : BasePage
     // Clicks the GPS button; if no precise fix arrives, confirms a location from the map instead
     public (string Latitude, string Longitude) CaptureLocation(int gpsTimeoutSeconds = 20)
     {
+        InjectEmulatorGpsFix();
         ScrollAndClick(LocateButton);
 
         // Prefer GPS: the "tap here" map link can show while the fix is still being acquired, so it only
         // decides the outcome once GPS has had its full timeout (the app fills 0,0 as a best estimate)
-        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(gpsTimeoutSeconds));
+        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(gpsTimeoutSeconds)) { PollingInterval = TimeSpan.FromSeconds(2) };
         wait.IgnoreExceptionTypes(typeof(NoSuchElementException), typeof(StaleElementReferenceException));
         bool gotGps;
         try
         {
-            gotGps = wait.Until(_ => HasRealCoordinates());
+            gotGps = wait.Until(_ =>
+            {
+                if (HasRealCoordinates()) return true;
+                InjectEmulatorGpsFix();
+                return false;
+            });
         }
         catch (WebDriverTimeoutException)
         {
@@ -488,12 +494,47 @@ public class CollectionLoadTicketFormPage : BasePage
         }
 
         new WebDriverWait(Driver, TimeSpan.FromSeconds(30)).Until(_ => HasRealCoordinates());
-        // Address Number / Street Name are reverse-geocoded from the coordinates
-        new WebDriverWait(Driver, TimeSpan.FromSeconds(30)).Until(_ => GetFieldValue("Street Name").Length > 0);
+        // Address Number / Street Name are reverse-geocoded from the coordinates. The lookup sometimes fails
+        // ("Failed to fetch your address"), so ask for the location once more before giving up
+        if (!WaitForStreetName(30))
+        {
+            Console.WriteLine("📍 Address lookup failed. Requesting the location again...");
+            InjectEmulatorGpsFix();
+            ScrollAndClick(LocateButton);
+            if (!WaitForStreetName(30))
+            {
+                throw new WebDriverTimeoutException(
+                    $"Street Name was not filled in for {ReadInputValue(LatitudeInput)}, {ReadInputValue(LongitudeInput)} (reverse geocoding failed twice).");
+            }
+        }
 
         var location = (ReadInputValue(LatitudeInput), ReadInputValue(LongitudeInput));
         Console.WriteLine($"📍 Location captured: {location.Item1}, {location.Item2} ({GetFieldValue("Address Number")} {GetFieldValue("Street Name")})");
         return location;
+    }
+
+    private bool WaitForStreetName(int timeoutSeconds)
+    {
+        try
+        {
+            return new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds)).Until(_ => GetFieldValue("Street Name").Length > 0);
+        }
+        catch (WebDriverTimeoutException)
+        {
+            return false;
+        }
+    }
+
+    // Emulators: Appium's mocked location doesn't always reach the app (it kept the emulator's default fix on
+    // Android 15), so also send the mock fix through the emulator console, which arrives as a real GPS reading
+    private void InjectEmulatorGpsFix()
+    {
+        if (Driver is not AndroidDriver androidDriver) return;
+        string? udid = AdbHelper.GetUdid(androidDriver);
+        if (udid == null || !udid.StartsWith("emulator-")) return;
+
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        AdbHelper.Run(udid, $"emu geo fix {MockLongitude.ToString(culture)} {MockLatitude.ToString(culture)} 0", timeoutMs: 5000);
     }
 
     private bool HasRealCoordinates()

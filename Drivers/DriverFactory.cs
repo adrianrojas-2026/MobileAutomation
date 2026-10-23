@@ -152,7 +152,9 @@ public static class DriverFactory
         }
     }
     
-    public static void InitializeDualApps()
+    // node: "Node1", "Node2"... runs on that Grid_<node>_Flex / Grid_<node>_Driver pair and logs in with its
+    // TestSettings:<node>:LoginEmail account when one is set; null leases the next free pair from the pool
+    public static void InitializeDualApps(string? node = null)
     {
         IConfiguration config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
@@ -164,10 +166,7 @@ public static class DriverFactory
         string webUrl = config["TestSettings:WebBaseUrl"] ?? "http://localhost:8100";
         string driverWebUrl = config["TestSettings:DriverWebBaseUrl"] ?? "http://localhost:8200";
 
-        _loginEmail.Value = config["TestSettings:LoginEmail"]
-            ?? throw new InvalidOperationException("LoginEmail setting is missing. Set it with 'dotnet user-secrets set TestSettings:LoginEmail <value>'.");
-        _loginPassword.Value = config["TestSettings:LoginPassword"]
-            ?? throw new InvalidOperationException("LoginPassword setting is missing. Set it with 'dotnet user-secrets set TestSettings:LoginPassword <value>'.");
+        SetLoginCredentials(config, node);
 
         // =========================================================================
         // SCENARIO 1: DEV MODE ON LOCALHOST (Launches web browsers directly)
@@ -217,13 +216,24 @@ public static class DriverFactory
         // =========================================================================
         // SCENARIO 2: PARALLEL EMULATOR SUITE (Launches Android Appium server nodes)
         // =========================================================================
-        if (!_availableNodesPool.TryDequeue(out var node))
-            throw new InvalidOperationException(
-                "No emulator node pairs available. All grid nodes are in use.");
+        string environmentFlex;
+        string environmentDriver;
+        if (node != null)
+        {
+            // Explicit pair: not taken from the pool, so don't mix with pooled tests on the same nodes
+            environmentFlex = $"Grid_{node}_Flex";
+            environmentDriver = $"Grid_{node}_Driver";
+        }
+        else
+        {
+            if (!_availableNodesPool.TryDequeue(out var leased))
+                throw new InvalidOperationException(
+                    "No emulator node pairs available. All grid nodes are in use.");
 
-        _leasedNode.Value = node;
-        string environmentFlex = node.Item1;
-        string environmentDriver = node.Item2;
+            _leasedNode.Value = leased;
+            environmentFlex = leased.Item1;
+            environmentDriver = leased.Item2;
+        }
 
         var appiumSection = config.GetSection("Appium");
         string serverUrl = appiumSection["ServerUrl"]!;
@@ -254,6 +264,19 @@ public static class DriverFactory
         };
 
         _environment.Value = $"{environmentFlex} + {environmentDriver}";
+    }
+
+    // Parallel nodes need their own Flex account, or each one sees the other's submitted tickets
+    private static void SetLoginCredentials(IConfiguration config, string? node)
+    {
+        string prefix = node != null && config[$"TestSettings:{node}:LoginEmail"] != null
+            ? $"TestSettings:{node}"
+            : "TestSettings";
+
+        _loginEmail.Value = config[$"{prefix}:LoginEmail"]
+            ?? throw new InvalidOperationException($"LoginEmail setting is missing. Set it with 'dotnet user-secrets set {prefix}:LoginEmail <value>'.");
+        _loginPassword.Value = config[$"{prefix}:LoginPassword"]
+            ?? throw new InvalidOperationException($"LoginPassword setting is missing. Set it with 'dotnet user-secrets set {prefix}:LoginPassword <value>'.");
     }
     // Opens the RecoveryTrac Driver app: Edge on localhost in Web mode, the paired emulator in Mobile mode
     public static IWebDriver StartDriverApp()
@@ -291,6 +314,13 @@ public static class DriverFactory
         if (!string.IsNullOrWhiteSpace(mjpegPortStr))
         {
             options.AddAdditionalAppiumOption("appium:mjpegServerPort", int.Parse(mjpegPortStr));
+        }
+
+        // Each WebView session on the shared Appium server needs its own chromedriver port
+        var chromedriverPortStr = envSection["ChromedriverPort"];
+        if (!string.IsNullOrWhiteSpace(chromedriverPortStr))
+        {
+            options.AddAdditionalAppiumOption("appium:chromedriverPort", int.Parse(chromedriverPortStr));
         }
 
         options.AddAdditionalAppiumOption("appium:noReset", true);

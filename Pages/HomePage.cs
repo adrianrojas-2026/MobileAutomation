@@ -293,8 +293,22 @@ public class HomePage : BasePage
         System.Threading.Thread.Sleep(500);
     }
 
+    // Mobile: value label of the 'Position' field shown instead of Task + Labor Category for accounts with a
+    // pre-assigned task (the WebView exposes the HTML id as resource-id)
+    private static readonly By MobilePositionValue = By.XPath("//*[@resource-id='projectTask9']");
+
+    private static string GetMobilePositionText() =>
+        DriverFactory.DriverFlex.FindElements(MobilePositionValue).FirstOrDefault(e => e.Displayed)?.Text?.Trim() ?? string.Empty;
+
     private void HandleMobileFormPreamble(OpenQA.Selenium.Support.UI.WebDriverWait wf)
     {
+        string positionText = GetMobilePositionText();
+        if (positionText.Length > 0)
+        {
+            Console.WriteLine($"⏩ Assignment pre-filled (Position '{positionText}'). Skipping Project/Task selection.");
+            return;
+        }
+
         Console.WriteLine("📱 Mobile mode detected. Selecting Project and Task fields...");
         
         // Select Project
@@ -403,6 +417,47 @@ public class HomePage : BasePage
 
     private void SelectLaborCategory(OpenQA.Selenium.Support.UI.WebDriverWait wf)
     {
+        // Web: accounts with a pre-assigned task (e.g. the Node2 user) open the modal already filled in, showing a
+        // 'Position' field instead of 'Labor Category'. CHANGE only submits once a pick re-validates the form, so
+        // re-pick the current Position
+        if (!IsMobileSession())
+        {
+            string positionText = DriverFactory.DriverFlex.FindElements(WebAssignmentFieldValue("Position"))
+                .FirstOrDefault(e => e.Displayed)?.Text.Trim() ?? string.Empty;
+            if (positionText.Length > 0)
+            {
+                Console.WriteLine($"🌐 Position already set ('{positionText}'). Re-selecting it so the form validates.");
+                SelectWebAssignmentOption(wf, "Position", positionText);
+                return;
+            }
+        }
+        else
+        {
+            string positionText = GetMobilePositionText();
+            if (positionText.Length > 0)
+            {
+                Console.WriteLine($"📱 Position already set ('{positionText}'). Re-selecting it so the form validates.");
+                wf.Until(d => d.FindElements(MobilePositionValue).FirstOrDefault(e => e.Displayed)).Click();
+                System.Threading.Thread.Sleep(800);
+
+                // The picker lists the options over the modal; skip the field label it was opened from
+                wf.Until(d =>
+                {
+                    try
+                    {
+                        var option = d.FindElements(By.XPath($"//*[contains(@text, '{positionText}')][not(@resource-id='projectTask9')]"))
+                            .LastOrDefault(o => o.Displayed);
+                        if (option == null) return false;
+                        option.Click();
+                        return true;
+                    }
+                    catch (Exception) { return false; }
+                });
+                System.Threading.Thread.Sleep(800);
+                return;
+            }
+        }
+
         var laborDropdown = wf.Until(d => d.FindElement(LaborCategoryDropdown));
         laborDropdown.Click();
         System.Threading.Thread.Sleep(800);
@@ -509,6 +564,19 @@ public class HomePage : BasePage
             catch (Exception) { return null; }
         });
         System.Threading.Thread.Sleep(1500);
+
+        // Web: an invalid form keeps the modal open behind an 'All fields are required.' alert; fail here with that
+        // message instead of timing out later on whatever the open modal blocks
+        if (!IsMobileSession())
+        {
+            var driver = DriverFactory.DriverFlex;
+            var alert = driver.FindElements(By.XPath("//ion-alert[contains(., 'required')]")).FirstOrDefault(a => a.Displayed);
+            if (alert != null)
+            {
+                throw new InvalidOperationException($"Change Assignment was rejected: '{alert.Text.Trim()}'.");
+            }
+            wf.Until(d => !d.FindElements(By.TagName("app-change-project")).Any(m => m.Displayed));
+        }
     }
 
 }

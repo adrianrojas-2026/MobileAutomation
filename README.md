@@ -6,13 +6,22 @@ written in C# with NUnit, Selenium and Appium (UiAutomator2). The same test runs
 | Mode | Flex runs in | Driver App runs in |
 |---|---|---|
 | **Web** | Chrome on `http://localhost:8100` | Edge on `http://localhost:8200` |
-| **Mobile** | Android emulator `emulator-5556` (Android 14) | Android emulator `emulator-5554` (Android 12) |
+| **Mobile** | Node 1: `emulator-5554` (Android 14)<br>Node 2: `emulator-5558` (Android 15) | Node 1: `emulator-5556` (Android 12)<br>Node 2: `emulator-5560` (Android 13) |
 
 Both modes run against the **local Aspire backend**.
 
 ## What the end-to-end test covers
 
-`Tests/LoadTicketCollectionTests.cs` → `Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E`
+`Tests/LoadTicketCollectionTests.cs` → `Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E`, as two test cases that run **in parallel**, one per node pair:
+
+| Test case | Flex | Driver App | Flex account |
+|---|---|---|---|
+| `..._E2E_Node1_A14_A12` | `Grid_Node1_Flex` (Android 14) | `Grid_Node1_Driver` (Android 12) | `TestSettings:LoginEmail` |
+| `..._E2E_Node2_A15_A13` | `Grid_Node2_Flex` (Android 15) | `Grid_Node2_Driver` (Android 13) | `TestSettings:Node2:LoginEmail` |
+
+Each node logs in with its **own Flex account**. With a shared account, each node would see the other's submitted tickets, and the "exactly one new ticket" check would fail.
+
+Each test case runs these steps:
 
 1. **Flex: log in**, accept the Privacy Policy and Terms of Service, and check that a project is assigned.
 2. **Flex: Load - Collection ticket.**
@@ -29,7 +38,7 @@ Both modes run against the **local Aspire backend**.
    - Submits, waits for **Synced**, then generates the disposal QR and saves it.
 5. **Driver App:** Scan Receipt Code with the disposal QR. The receipt must match the tickets: receipt number, truck, debris type, capacity and load call.
 
-Generated QR codes are saved under `bin/Debug/net10.0/QrCodes/` and attached to the test result.
+Generated QR codes are saved under `bin/Debug/net10.0/QrCodes/` (named with the node, e.g. `CollectionLoadTicket_Node2_<timestamp>.png`) and attached to the test result.
 
 ## Project layout
 
@@ -58,7 +67,13 @@ Generated QR codes are saved under `bin/Debug/net10.0/QrCodes/` and attached to 
   ```powershell
   dotnet user-secrets set TestSettings:LoginEmail "<flex test user email>"
   dotnet user-secrets set TestSettings:LoginPassword "<flex test user password>"
+
+  # Node 2's own Flex account (e.g. Flex.testuser2@tetratech.com)
+  dotnet user-secrets set TestSettings:Node2:LoginEmail "<second flex test user email>"
+  dotnet user-secrets set TestSettings:Node2:LoginPassword "<second flex test user password>"
   ```
+
+  A node uses `TestSettings:<node>:LoginEmail` / `LoginPassword` when that email is set; otherwise it uses the default account. Each account needs the same setup: a project and task assignment, and access to the *Load - Collection* and *Load - Disposal* forms.
 
 ## Configuration (`Config/appsettings.json`)
 
@@ -68,8 +83,12 @@ Generated QR codes are saved under `bin/Debug/net10.0/QrCodes/` and attached to 
 | `TestSettings:WebBaseUrl` / `DriverWebBaseUrl` | Flex and Driver App URLs for Web mode (`http://localhost:8100` / `8200`) |
 | `TestSettings:AspireServicePorts` | Local service ports forwarded to the emulators in Mobile mode (see [Backend ports](#backend-ports)) |
 | `Appium:ServerUrl` | Appium server (`http://127.0.0.1:4723`) |
-| `MobileConfigurations:Grid_Node1_Flex` | Flex emulator: `Udid` `emulator-5556`, Android 14 |
-| `MobileConfigurations:Grid_Node1_Driver` | Driver emulator: `Udid` `emulator-5554`, Android 12 |
+| `MobileConfigurations:Grid_Node1_Flex` | Node 1 Flex emulator: `Udid` `emulator-5554`, Android 14 |
+| `MobileConfigurations:Grid_Node1_Driver` | Node 1 Driver emulator: `Udid` `emulator-5556`, Android 12 |
+| `MobileConfigurations:Grid_Node2_Flex` | Node 2 Flex emulator: `Udid` `emulator-5558`, Android 15 |
+| `MobileConfigurations:Grid_Node2_Driver` | Node 2 Driver emulator: `Udid` `emulator-5560`, Android 13 |
+
+Every `Grid_Node*` entry has its own `SystemPort` (820x), `mjpegServerPort` (830x) and `ChromedriverPort` (840x), so parallel sessions on the one Appium server don't share a port.
 
 ---
 
@@ -83,10 +102,10 @@ Generated QR codes are saved under `bin/Debug/net10.0/QrCodes/` and attached to 
 ### Run
 
 1. Set `"RunMode": "Web"` in `Config/appsettings.json`.
-2. Run the test:
+2. Run the test. Web mode doesn't use the node emulators, so run one case. Running both opens two Chrome and two Edge windows at once:
 
    ```powershell
-   dotnet test --filter "Name~LoadDisposalCollectionFlow" --logger "console;verbosity=detailed"
+   dotnet test --filter "Name~E2E_Node1" --logger "console;verbosity=detailed"
    ```
 
    Or run it from the IDE's Test Explorer.
@@ -112,17 +131,34 @@ Chrome (Flex) opens first. Edge (Driver App) opens once the collection QR code e
 
 #### 2. Emulators
 
-| Role | Serial | Android | AVD used so far |
-|---|---|---|---|
-| Flex | `emulator-5556` | 14 (API 34) | `Pixel_8` |
-| Driver App | `emulator-5554` | **12 (API 31)**, required | `Pixel_6` or `Driver_A12_Play` |
+| Node | Role | Serial | Android | AVD |
+|---|---|---|---|---|
+| 1 | Flex | `emulator-5554` | 14 (API 34) | `Pixel_8` |
+| 1 | Driver App | `emulator-5556` | 12 (API 31) | `Driver_A12_Play` |
+| 2 | Flex | `emulator-5558` | 15 (API 35) | `Pixel_9` |
+| 2 | Driver App | `emulator-5560` | 13 (API 33) | `Pixel_7_Android_13` |
 
-- **Start order sets the serial:** the serial depends on the order the emulators start (5554, 5556, ...). Whatever you start first gets 5554, so start the Driver emulator first, or set the `Udid` values in `appsettings.json` to match. To check which app is on which emulator:
+Node 1 is the pair that has passed full runs. Node 2 hasn't completed a run yet.
+
+- **Start each emulator on its port** so the serial always matches `appsettings.json`. Otherwise the serial depends on start order (the first emulator gets 5554):
+
+  ```powershell
+  $emu = "$env:ANDROID_HOME\emulator\emulator.exe"
+  & $emu -avd Pixel_8            -port 5554 -no-audio -gpu host
+  & $emu -avd Driver_A12_Play    -port 5556 -no-audio -gpu host
+  & $emu -avd Pixel_9            -port 5558 -no-audio -gpu host
+  & $emu -avd Pixel_7_Android_13 -port 5560 -no-audio -gpu host
+  ```
+
+  To check which AVD and app are on which serial:
 
   ```powershell
   adb devices
-  adb -s emulator-5556 shell pm list packages | findstr tetratech
+  adb -s emulator-5558 emu avd name
+  adb -s emulator-5558 shell pm list packages | findstr tetratech
   ```
+
+- **Memory:** four emulators use most of a 32 GB machine. Close Android Studio and browsers before a parallel run. Frozen emulators or Appium session timeouts usually mean the host is out of RAM.
 
 - **Back camera:** the Collection Start and Load Call photo fields need a live photo, so the Flex emulator must have a working camera. Pixel_8 uses `hw.camera.back=virtualscene`; a real webcam (`webcam0`) also works.
 - **GPU:** `hw.gpu.mode=host` is set on the emulators (`config.ini` in `%USERPROFILE%\.android\avd\<name>.avd`).
@@ -132,8 +168,16 @@ Chrome (Flex) opens first. Edge (Driver App) opens once the collection QR code e
 The tests need **debug builds** of Flex and the Driver App that call the local Aspire services. Store or release builds won't work. Build and install them with:
 
 ```powershell
-.\Setup\Build-DebugApk.ps1 -App Flex     # builds and installs on emulator-5556
-.\Setup\Build-DebugApk.ps1 -App Driver   # builds and installs on emulator-5554
+.\Setup\Build-DebugApk.ps1 -App Flex   -Udid emulator-5554   # builds and installs on Node 1 Flex
+.\Setup\Build-DebugApk.ps1 -App Driver -Udid emulator-5556   # builds and installs on Node 1 Driver
+```
+
+The script's default serials (Flex `5556`, Driver `5554`) are from the older single-pair layout, so pass `-Udid`. To put the same build on Node 2, install the APK directly:
+
+```powershell
+$ui = "C:\Users\adrian.rojas\tetratec\Aspire\RecoveryTrac.UI\apps"
+adb -s emulator-5558 install -r "$ui\Flex\android\app\build\outputs\apk\debug\app-debug.apk"
+adb -s emulator-5560 install -r "$ui\Driver-App\android\app\build\outputs\apk\debug\app-debug.apk"
 ```
 
 The script expects the RecoveryTrac UI repo at `C:\Users\adrian.rojas\tetratec\Aspire\RecoveryTrac.UI` (override with `-UiPath`) and JDK 21 at the Eclipse Adoptium path (override with `-JavaHome`). It always does a **clean** Gradle build, because an incremental build once produced an APK that crashed on start (*ClassNotFoundException: MainActivity*).
@@ -174,7 +218,7 @@ If Aspire ever assigns different ports, update this list and the port table in `
 ### Before each Mobile run
 
 1. **Aspire** is running.
-2. **Both emulators** are running on the serials in `appsettings.json`, with the debug APKs installed.
+2. **All four emulators** are running on the serials in `appsettings.json`, with the debug APKs installed (Flex on 5554/5558, Driver on 5556/5560).
 3. **Appium** is running, in its own terminal:
 
    ```powershell
@@ -187,10 +231,16 @@ If Aspire ever assigns different ports, update this list and the port table in `
 ### Run
 
 ```powershell
+# Both nodes in parallel
 dotnet test --filter "Name~LoadDisposalCollectionFlow" --logger "console;verbosity=detailed"
+
+# One node only
+dotnet test --filter "Name~E2E_Node2" --logger "console;verbosity=detailed"
 ```
 
-A run takes about **4–5 minutes**. Leave the emulators alone while it runs.
+The two cases run at the same time (`[Parallelizable(ParallelScope.Children)]`, up to `LevelOfParallelism(3)` in `Properties/AssemblyInfo.cs`). Each case uses the node pair it names, not the shared node pool. A run takes about **4–5 minutes** per node, and the parallel run takes about as long as the slower node. Leave the emulators alone while it runs.
+
+Both nodes pick the **first truck**. If the backend allows only one active load per truck, one node fails at the Driver scan step.
 
 ### How Mobile mode handles the camera
 
@@ -209,7 +259,7 @@ A run takes about **4–5 minutes**. Leave the emulators alone while it runs.
 
 ## Failure evidence and reports
 
-- **Failure files:** when a test fails, the screen, page text and page source of each app are saved to `bin/Debug/net10.0/` as `Failure_<test>_<timestamp>_Flex.*` and `..._DriverApp.*`. They're also attached to the test result. The `.html` file is the most useful one for fixing locators.
+- **Failure files:** when a test fails, the screen, page text and page source of each app are saved to `bin/Debug/net10.0/` as `Failure_<test>_<timestamp>_Flex.*` and `..._DriverApp.*`. `<test>` ends in the node name (e.g. `..._E2E_Node2_A15_A13`). They're also attached to the test result. The `.html` file is the most useful one for fixing locators.
 - **HTML report:** generated after each run by `HtmlReportGenerator`.
 
 ## Troubleshooting
@@ -224,3 +274,6 @@ A run takes about **4–5 minutes**. Leave the emulators alone while it runs.
 | Gradle: *"Unsupported class file major version 69"* | Use JDK 21 (`-JavaHome`), not Android Studio's bundled JDK |
 | Build: *"file is being used by another process"* | A debug session is holding the test DLL. Stop it (Shift+F5) |
 | Driver App still has a load from an earlier run | The test cancels it automatically (it waits out the CONFIRM countdown) |
+| `LoginPassword setting is missing ... TestSettings:Node2:LoginPassword` | Node 2's email is set but its password isn't. Set it with `dotnet user-secrets set TestSettings:Node2:LoginPassword <value>` |
+| Node 2 fails at login or finds no project | The Node 2 account isn't set up like the Node 1 account (project/task assignment, form access) |
+| Emulators freeze or sessions time out only in parallel runs | The host is out of RAM. Close other apps, or run one node at a time |
