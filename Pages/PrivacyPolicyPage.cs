@@ -21,14 +21,43 @@ public class PrivacyPolicyPage : BasePage
                 return By.CssSelector("ion-button[slot='end'], ion-button.right-button");
             }
             
-            // 💡 FIXED: Stripped the generic '//*' to ensure Appium targets the clickable Button wrapper widget, not an inner text node
+            // Case-insensitive and not tied to android.widget.Button: newer builds expose the caption as "I Agree" (the
+            // capitals are CSS) and the button as a clickable View. Exact caption, so the "END USER LICENSE AGREEMENT"
+            // title doesn't match
+            const string caption = "translate(normalize-space(@text), 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')";
             return By.XPath(
-                "//android.widget.Button[contains(@text, 'AGREE')] " +
-                "| //android.widget.Button[@text='I AGREE']");
+                $"//android.widget.Button[{caption}='I AGREE' or {caption}='AGREE'] " +
+                $"| //*[@clickable='true'][{caption}='I AGREE' or {caption}='AGREE']");
         }
     }
+
+    // Clicks the agreement's I AGREE inside the app's DOM: the floating chat bubble overlaps it, so a native tap at
+    // the button's centre can land on the bubble instead
+    private const string HasAgreeButtonInDomScript =
+        "return [...document.querySelectorAll('ion-button, button')].some(b => {" +
+        "  const t = (b.innerText || b.textContent || '').trim().toUpperCase();" +
+        "  const r = b.getBoundingClientRect();" +
+        "  return (t === 'I AGREE' || t === 'AGREE') && r.width > 0 && r.height > 0;" +
+        "});";
+
+    private const string ClickAgreeInDomScript =
+        "const btn = [...document.querySelectorAll('ion-button, button')].reverse().find(b => {" +
+        "  const t = (b.innerText || b.textContent || '').trim().toUpperCase();" +
+        "  const r = b.getBoundingClientRect();" +
+        "  return (t === 'I AGREE' || t === 'AGREE') && r.width > 0 && r.height > 0;" +
+        "});" +
+        "if (!btn) return false;" +
+        "btn.click();" +
+        "return true;";
+
     public void ClickAgree()
     {
+        if (Driver is OpenQA.Selenium.Appium.Android.AndroidDriver && ExecuteInWebView(ClickAgreeInDomScript) is true)
+        {
+            Console.WriteLine("📱 Mobile Mode: Clicked 'I AGREE' inside the WebView.");
+            return;
+        }
+
         // 🌐 WEB ONLY WORKFLOW
         if (Driver is not OpenQA.Selenium.Appium.Android.AndroidDriver && Driver is IJavaScriptExecutor js)
         {
@@ -48,6 +77,35 @@ public class PrivacyPolicyPage : BasePage
         // A standard click works perfectly once locked onto the true android.widget.Button node
         buttonElement.Click();
     }
+    private static bool IsPostLoginRoute(string route) =>
+        route.Contains("privacyPolicy", StringComparison.OrdinalIgnoreCase)
+        || route.Contains("termsOfService", StringComparison.OrdinalIgnoreCase)
+        || route.StartsWith("#/app/", StringComparison.OrdinalIgnoreCase);
+
+    // Returns the route once the app leaves login/sync, or whatever route it is on when the timeout elapses
+    private string WaitForPostLoginRoute(int timeoutSeconds)
+    {
+        string route = CurrentRoute();
+        var deadline = DateTime.Now.AddSeconds(timeoutSeconds);
+        while (!IsPostLoginRoute(route) && DateTime.Now < deadline)
+        {
+            Thread.Sleep(1000);
+            try
+            {
+                route = CurrentRoute();
+            }
+            catch (WebDriverException)
+            {
+                // WebView context briefly unavailable while the app navigates - poll again
+            }
+        }
+        if (!IsPostLoginRoute(route))
+        {
+            Console.WriteLine($"App is still on '{route}' after {timeoutSeconds}s; checking for agreements anyway.");
+        }
+        return route;
+    }
+
     public void ClearAllPendingAgreements()
     {
         Console.WriteLine("Scanning for active agreement screens (Privacy Policy / Terms of Service)...");
@@ -65,16 +123,32 @@ public class PrivacyPolicyPage : BasePage
 
             try
             {
-                var agreementWait = new WebDriverWait(Driver, TimeSpan.FromSeconds(5));
-                
-                var agreeBtn = agreementWait.Until(d => 
+                // After a fresh-install login the app sits on the login/sync route for a while before it routes to the
+                // agreements, so wait until it lands on an agreement or an in-app route before deciding
+                string route = WaitForPostLoginRoute(timeoutSeconds: agreementCounter == 0 ? 60 : 15);
+
+                // Still on an agreement route: the long EULA (Terms of Service) can take well over 5s to render its
+                // I AGREE button on an emulator, so give it longer before concluding there is nothing to accept
+                bool onAgreementRoute = route.Contains("privacyPolicy", StringComparison.OrdinalIgnoreCase)
+                                        || route.Contains("termsOfService", StringComparison.OrdinalIgnoreCase);
+                var agreementWait = new WebDriverWait(Driver, TimeSpan.FromSeconds(onAgreementRoute ? 30 : 5));
+
+                // "native", "dom" or null; WebDriverWait needs a reference type
+                var agreeBtn = agreementWait.Until(d =>
                 {
                     // 💡 FIX: Use FindElements to safely return an empty collection instead of crashing the runner thread
                     var elements = d.FindElements(AgreeButton);
                     if (elements.Count > 0)
                     {
                         var el = elements.First();
-                        return (el != null && el.Displayed && el.Enabled) ? el : null;
+                        if (el != null && el.Displayed && el.Enabled) return "native";
+                    }
+
+                    // Some builds don't expose the WebView's I AGREE in the native tree at all
+                    if (d is OpenQA.Selenium.Appium.Android.AndroidDriver && onAgreementRoute
+                        && ExecuteInWebView(HasAgreeButtonInDomScript) is true)
+                    {
+                        return "dom";
                     }
                     return null;
                 });

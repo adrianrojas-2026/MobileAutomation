@@ -5,6 +5,7 @@ using OpenQA.Selenium.Appium.iOS;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Edge;
+using MobileAutomation.Tests.Utilities;
 
 namespace MobileAutomation.Tests.Drivers;
 
@@ -21,6 +22,16 @@ public static class DriverFactory
 
     public static IWebDriver DriverFlex => _driverFlex.Value!;
     public static IWebDriver DriverDriver => _driverDriver.Value!;
+
+    // The Driver app session is opened on demand (StartDriverApp) once the Flex side has something for it to act on,
+    // so it doesn't sit idle past newCommandTimeout during the long Flex flow
+    private static ThreadLocal<Func<IWebDriver>?> _driverDriverLauncher = new();
+
+    // Files each browser's fake camera plays (Web mode only; null on emulators)
+    private static readonly ThreadLocal<string?> _flexCameraFeedPath = new();
+    private static readonly ThreadLocal<string?> _driverCameraFeedPath = new();
+    public static string? FlexCameraFeedPath => _flexCameraFeedPath.Value;
+    public static string? DriverCameraFeedPath => _driverCameraFeedPath.Value;
 
     // --- Shared environment variables ---
     private static readonly ThreadLocal<string> _environment = new();
@@ -151,6 +162,7 @@ public static class DriverFactory
 
         string runMode = config["TestSettings:RunMode"] ?? "Mobile";
         string webUrl = config["TestSettings:WebBaseUrl"] ?? "http://localhost:8100";
+        string driverWebUrl = config["TestSettings:DriverWebBaseUrl"] ?? "http://localhost:8200";
 
         _loginEmail.Value = config["TestSettings:LoginEmail"]
             ?? throw new InvalidOperationException("LoginEmail setting is missing. Set it with 'dotnet user-secrets set TestSettings:LoginEmail <value>'.");
@@ -169,13 +181,34 @@ public static class DriverFactory
             // ADD THESE TWO LINES HERE TO SUPPRESS WEB POPUPS:
             chromeOptions.AddArgument("--disable-notifications");
             chromeOptions.AddArgument("--disable-popup-blocking");
+            // Both apps scan QR codes with the camera: auto-grant it (no "Use camera?" prompt) and point it at a file
+            // the test rewrites with the code to scan (see FakeCameraFeed)
+            string cameraFeedDirectory = Path.Combine(AppContext.BaseDirectory, "FakeCamera");
+            _flexCameraFeedPath.Value = Path.Combine(cameraFeedDirectory, $"flex_{Guid.NewGuid():N}.y4m");
+            _driverCameraFeedPath.Value = Path.Combine(cameraFeedDirectory, $"driver_{Guid.NewGuid():N}.y4m");
+            FakeCameraFeed.WriteBlank(_flexCameraFeedPath.Value);
+            FakeCameraFeed.WriteBlank(_driverCameraFeedPath.Value);
+            string driverCameraFeedPath = _driverCameraFeedPath.Value;
+
+            chromeOptions.AddArgument("--use-fake-ui-for-media-stream");
+            chromeOptions.AddArgument("--use-fake-device-for-media-stream");
+            chromeOptions.AddArgument($"--use-file-for-fake-video-capture={_flexCameraFeedPath.Value}");
 
             _driverFlex.Value = new ChromeDriver(chromeOptions);
             _driverFlex.Value.Navigate().GoToUrl(webUrl);
 
-            var edgeOptions = new EdgeOptions();
-            _driverDriver.Value = new EdgeDriver(edgeOptions);
-            _driverDriver.Value.Navigate().GoToUrl(webUrl);
+            _driverDriverLauncher.Value = () =>
+            {
+                var edgeOptions = new EdgeOptions();
+                edgeOptions.AddArgument("--start-maximized");
+                edgeOptions.AddArgument("--disable-notifications");
+                edgeOptions.AddArgument("--use-fake-ui-for-media-stream");
+                edgeOptions.AddArgument("--use-fake-device-for-media-stream");
+                edgeOptions.AddArgument($"--use-file-for-fake-video-capture={driverCameraFeedPath}");
+                var edge = new EdgeDriver(edgeOptions);
+                edge.Navigate().GoToUrl(driverWebUrl);
+                return edge;
+            };
 
             _environment.Value = "Localhost_Web_Development";
             return;
@@ -204,13 +237,36 @@ public static class DriverFactory
         var optionsFlex = ConfigureOptions(appiumSection, envFlexSection, "flex");
         _driverFlex.Value = new AndroidDriver(new Uri(serverUrl), optionsFlex);
 
+        // Debug APKs call the local Aspire services on the emulator's own "localhost"; the reverse forwards don't
+        // survive across sessions, so (re)apply them once the session is up
+        var aspirePorts = config.GetSection("TestSettings:AspireServicePorts").GetChildren()
+            .Select(port => int.Parse(port.Value!)).ToArray();
+        AdbHelper.ReversePorts(envFlexSection["Udid"], aspirePorts);
+
         // 2. INITIALIZE RECOVERY TRAC DRIVER
         var envDriverSection = config.GetSection($"MobileConfigurations:{environmentDriver}");
         var optionsDriver = ConfigureOptions(appiumSection, envDriverSection, "driver");
-        _driverDriver.Value = new AndroidDriver(new Uri(serverUrl), optionsDriver);
+        _driverDriverLauncher.Value = () =>
+        {
+            var driverApp = new AndroidDriver(new Uri(serverUrl), optionsDriver);
+            AdbHelper.ReversePorts(envDriverSection["Udid"], aspirePorts);
+            return driverApp;
+        };
 
         _environment.Value = $"{environmentFlex} + {environmentDriver}";
     }
+    // Opens the RecoveryTrac Driver app: Edge on localhost in Web mode, the paired emulator in Mobile mode
+    public static IWebDriver StartDriverApp()
+    {
+        if (_driverDriver.Value != null) return _driverDriver.Value;
+
+        var launcher = _driverDriverLauncher.Value
+            ?? throw new InvalidOperationException("InitializeDualApps() must run before StartDriverApp().");
+        Console.WriteLine("🚚 Starting the RecoveryTrac Driver app instance...");
+        _driverDriver.Value = launcher();
+        return _driverDriver.Value;
+    }
+
     private static AppiumOptions ConfigureOptions(IConfigurationSection appiumSection, IConfigurationSection envSection, string appTarget)
     {
         var options = new AppiumOptions();
@@ -330,6 +386,18 @@ public static class DriverFactory
         } 
         catch { /* Suppress runtime loop faults */ }
         _driverDriver.Value = null!;
+        _driverDriverLauncher.Value = null;
+
+        // 4. Remove the fake camera feed files (browsers are closed, so they're no longer locked)
+        foreach (var feed in new[] { _flexCameraFeedPath, _driverCameraFeedPath })
+        {
+            try
+            {
+                if (feed.Value != null) File.Delete(feed.Value);
+            }
+            catch { /* Best effort cleanup */ }
+            feed.Value = null;
+        }
 
     }
 }
