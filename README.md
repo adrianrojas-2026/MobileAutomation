@@ -6,20 +6,21 @@ written in C# with NUnit, Selenium and Appium (UiAutomator2). The same test runs
 | Mode | Flex runs in | Driver App runs in |
 |---|---|---|
 | **Web** | Chrome on `http://localhost:8100` | Edge on `http://localhost:8200` |
-| **Mobile** | Node 1: `emulator-5554` (Android 14)<br>Node 2: `emulator-5558` (Android 15) | Node 1: `emulator-5556` (Android 12)<br>Node 2: `emulator-5560` (Android 13) |
+| **Mobile** | Node 1: `emulator-5554` (Android 14)<br>Node 2: `emulator-5558` (Android 15)<br>Node 3: `emulator-5562` (Android 17) | Node 1: `emulator-5556` (Android 12)<br>Node 2: `emulator-5560` (Android 13)<br>Node 3: `emulator-5564` (Android 16) |
 
 Both modes run against the **local Aspire backend**.
 
 ## What the end-to-end test covers
 
-`Tests/LoadTicketCollectionTests.cs` → `Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E`, as two test cases that run **in parallel**, one per node pair:
+`Tests/LoadTicketCollectionTests.cs` → `Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E`, as three test cases that run **in parallel**, one per node pair:
 
 | Test case | Flex | Driver App | Flex account |
 |---|---|---|---|
 | `..._E2E_Node1_A14_A12` | `Grid_Node1_Flex` (Android 14) | `Grid_Node1_Driver` (Android 12) | `TestSettings:LoginEmail` |
 | `..._E2E_Node2_A15_A13` | `Grid_Node2_Flex` (Android 15) | `Grid_Node2_Driver` (Android 13) | `TestSettings:Node2:LoginEmail` |
+| `..._E2E_Node3_A17_A16` | `Grid_Node3_Flex` (Android 17) | `Grid_Node3_Driver` (Android 16) | `TestSettings:Node3:LoginEmail` |
 
-Each node logs in with its **own Flex account**. With a shared account, each node would see the other's submitted tickets, and the "exactly one new ticket" check would fail.
+Each node logs in with its **own Flex account**. With a shared account, each node would see the others' submitted tickets, and the "exactly one new ticket" check would fail. That's why Node 2 and Node 3 stop at setup with a clear message if their account isn't set. Only Node 1 uses the default account.
 
 Each test case runs these steps:
 
@@ -29,7 +30,7 @@ Each test case runs these steps:
    - Trailer: answers **No**.
    - Collection Start: adds the debris pile photo.
    - Collection Information: debris type **Vegetative/Woody**.
-   - Location Information: captures the location.
+   - Location Information: captures the GPS location (mocked to Polk City Rd, FL) and waits for the street name.
    - Submits, generates the QR code and saves it, then waits for the ticket to reach **Synced**.
 3. **Driver App:** GET STARTED → SKIP, then scans the collection QR. The scanned ticket becomes the **Current Load**.
 4. **Flex: Load - Disposal ticket.**
@@ -51,6 +52,7 @@ Generated QR codes are saved under `bin/Debug/net10.0/QrCodes/` (named with the 
 | `Utilities/FakeCameraFeed.cs` | Web: feeds an image (QR code) to the browser's fake camera |
 | `Utilities/QrScanFeed.cs` | Hands a QR code to an app's scanner (Web: fake camera; Mobile: see [How Mobile mode handles the camera](#how-mobile-mode-handles-the-camera)) |
 | `Utilities/AdbHelper.cs` | `adb` helpers: port forwarding and adding photos to the gallery |
+| `Setup/Start-MobileGrid.ps1` | Starts the six node emulators on their fixed ports, then checks each one's Android version and installed APK |
 | `Setup/Build-DebugApk.ps1` | Builds and installs the Flex / Driver debug APKs against the local backend |
 | `Config/appsettings.json` | Run mode, URLs, Appium and emulator settings |
 | `TestData/` | Test images (e.g. `DebrisPile.png`) |
@@ -71,9 +73,13 @@ Generated QR codes are saved under `bin/Debug/net10.0/QrCodes/` (named with the 
   # Node 2's own Flex account (e.g. Flex.testuser2@tetratech.com)
   dotnet user-secrets set TestSettings:Node2:LoginEmail "<second flex test user email>"
   dotnet user-secrets set TestSettings:Node2:LoginPassword "<second flex test user password>"
+
+  # Node 3's own Flex account
+  dotnet user-secrets set TestSettings:Node3:LoginEmail "<third flex test user email>"
+  dotnet user-secrets set TestSettings:Node3:LoginPassword "<third flex test user password>"
   ```
 
-  A node uses `TestSettings:<node>:LoginEmail` / `LoginPassword` when that email is set; otherwise it uses the default account. Each account needs the same setup: a project and task assignment, and access to the *Load - Collection* and *Load - Disposal* forms.
+  A node uses `TestSettings:<node>:LoginEmail` / `LoginPassword` when that email is set. Node 1 falls back to the default account; Node 2 and Node 3 must have their own. Each account needs the same setup: a project and task assignment, and access to the *Load - Collection* and *Load - Disposal* forms.
 
 ## Configuration (`Config/appsettings.json`)
 
@@ -87,6 +93,8 @@ Generated QR codes are saved under `bin/Debug/net10.0/QrCodes/` (named with the 
 | `MobileConfigurations:Grid_Node1_Driver` | Node 1 Driver emulator: `Udid` `emulator-5556`, Android 12 |
 | `MobileConfigurations:Grid_Node2_Flex` | Node 2 Flex emulator: `Udid` `emulator-5558`, Android 15 |
 | `MobileConfigurations:Grid_Node2_Driver` | Node 2 Driver emulator: `Udid` `emulator-5560`, Android 13 |
+| `MobileConfigurations:Grid_Node3_Flex` | Node 3 Flex emulator: `Udid` `emulator-5562`, Android 17 |
+| `MobileConfigurations:Grid_Node3_Driver` | Node 3 Driver emulator: `Udid` `emulator-5564`, Android 16 |
 
 Every `Grid_Node*` entry has its own `SystemPort` (820x), `mjpegServerPort` (830x) and `ChromedriverPort` (840x), so parallel sessions on the one Appium server don't share a port.
 
@@ -137,20 +145,27 @@ Chrome (Flex) opens first. Edge (Driver App) opens once the collection QR code e
 | 1 | Driver App | `emulator-5556` | 12 (API 31) | `Driver_A12_Play` |
 | 2 | Flex | `emulator-5558` | 15 (API 35) | `Pixel_9` |
 | 2 | Driver App | `emulator-5560` | 13 (API 33) | `Pixel_7_Android_13` |
+| 3 | Flex | `emulator-5562` | 17 (API 37) | `Pixel_10_Pro` |
+| 3 | Driver App | `emulator-5564` | 16 (API 36) | `Pixel_9_A16` |
 
-Node 1 is the pair that has passed full runs. Node 2 hasn't completed a run yet.
+Nodes 1 and 2 have passed full parallel runs in both Web and Mobile mode. Node 3 hasn't completed a run yet.
 
-- **Start each emulator on its port** so the serial always matches `appsettings.json`. Otherwise the serial depends on start order (the first emulator gets 5554):
+- **Start the grid with the script.** It starts each emulator on its own port, so the serial always matches `appsettings.json`. (Started by hand, the serial depends on start order: the first emulator gets 5554.) It stops if a port is taken by the wrong AVD. Once the emulators have booted, it reports each serial's Android version and whether its APK is installed:
 
   ```powershell
-  $emu = "$env:ANDROID_HOME\emulator\emulator.exe"
-  & $emu -avd Pixel_8            -port 5554 -no-audio -gpu host
-  & $emu -avd Driver_A12_Play    -port 5556 -no-audio -gpu host
-  & $emu -avd Pixel_9            -port 5558 -no-audio -gpu host
-  & $emu -avd Pixel_7_Android_13 -port 5560 -no-audio -gpu host
+  .\Setup\Start-MobileGrid.ps1                # all 3 nodes, windows visible
+  .\Setup\Start-MobileGrid.ps1 -Nodes 1,2     # only some nodes (saves RAM)
+  .\Setup\Start-MobileGrid.ps1 -Headless      # no windows
+  .\Setup\Start-MobileGrid.ps1 -Stop          # shut the grid down
+  .\Setup\Start-MobileGrid.ps1 -MemoryMB 3072 # more RAM per emulator
+  .\Setup\Start-MobileGrid.ps1 -Arrange       # lay out the running emulators' windows side by side again
   ```
 
-  To check which AVD and app are on which serial:
+  The script lays the emulator windows out side by side across your monitors, preferring monitors tall enough for a whole device. Each AVD otherwise opens where it was last, which can be stacked or off the top of a short screen.
+
+  Every emulator starts with 2 GB of RAM and 2 CPU cores (`-MemoryMB`, `-Cores`), whatever its AVD says. That keeps all six within a 32 GB laptop. The script warns before starting an emulator when there isn't enough free memory for it.
+
+  The AVD-to-port table is at the top of the script; keep it in sync with `appsettings.json`. To check a serial by hand:
 
   ```powershell
   adb devices
@@ -158,10 +173,11 @@ Node 1 is the pair that has passed full runs. Node 2 hasn't completed a run yet.
   adb -s emulator-5558 shell pm list packages | findstr tetratech
   ```
 
-- **Memory:** four emulators use most of a 32 GB machine. Close Android Studio and browsers before a parallel run. Frozen emulators or Appium session timeouts usually mean the host is out of RAM.
+- **Memory:** four emulators already use most of a 32 GB machine, so six is tight. Close Android Studio and browsers before a parallel run, and start only the nodes you run (`-Nodes`). Frozen emulators or Appium session timeouts usually mean the host is out of RAM.
 
 - **Back camera:** the Collection Start and Load Call photo fields need a live photo, so the Flex emulator must have a working camera. Pixel_8 uses `hw.camera.back=virtualscene`; a real webcam (`webcam0`) also works.
 - **GPU:** `hw.gpu.mode=host` is set on the emulators (`config.ini` in `%USERPROFILE%\.android\avd\<name>.avd`).
+- **Android 17 (`Pixel_10_Pro`)** uses a 16 KB page-size system image (`ps16k`). If Flex won't install or crashes on start there, a native library in the APK isn't 16 KB-aligned. That's a problem with the app build, not the tests.
 
 #### 3. Debug APKs that talk to the local backend
 
@@ -172,12 +188,14 @@ The tests need **debug builds** of Flex and the Driver App that call the local A
 .\Setup\Build-DebugApk.ps1 -App Driver -Udid emulator-5556   # builds and installs on Node 1 Driver
 ```
 
-The script's default serials (Flex `5556`, Driver `5554`) are from the older single-pair layout, so pass `-Udid`. To put the same build on Node 2, install the APK directly:
+The script's default serials (Flex `5556`, Driver `5554`) are from the older single-pair layout, so pass `-Udid`. To put the same build on Node 2 and Node 3, install the APK directly:
 
 ```powershell
 $ui = "C:\Users\adrian.rojas\tetratec\Aspire\RecoveryTrac.UI\apps"
 adb -s emulator-5558 install -r "$ui\Flex\android\app\build\outputs\apk\debug\app-debug.apk"
 adb -s emulator-5560 install -r "$ui\Driver-App\android\app\build\outputs\apk\debug\app-debug.apk"
+adb -s emulator-5562 install -r "$ui\Flex\android\app\build\outputs\apk\debug\app-debug.apk"
+adb -s emulator-5564 install -r "$ui\Driver-App\android\app\build\outputs\apk\debug\app-debug.apk"
 ```
 
 The script expects the RecoveryTrac UI repo at `C:\Users\adrian.rojas\tetratec\Aspire\RecoveryTrac.UI` (override with `-UiPath`) and JDK 21 at the Eclipse Adoptium path (override with `-JavaHome`). It always does a **clean** Gradle build, because an incremental build once produced an APK that crashed on start (*ClassNotFoundException: MainActivity*).
@@ -218,7 +236,7 @@ If Aspire ever assigns different ports, update this list and the port table in `
 ### Before each Mobile run
 
 1. **Aspire** is running.
-2. **All four emulators** are running on the serials in `appsettings.json`, with the debug APKs installed (Flex on 5554/5558, Driver on 5556/5560).
+2. **The node emulators** are running on the serials in `appsettings.json`, with the debug APKs installed (Flex on 5554/5558/5562, Driver on 5556/5560/5564). `.\Setup\Start-MobileGrid.ps1` shows `OK` for each one when this is true.
 3. **Appium** is running, in its own terminal:
 
    ```powershell
@@ -231,16 +249,17 @@ If Aspire ever assigns different ports, update this list and the port table in `
 ### Run
 
 ```powershell
-# Both nodes in parallel
+# All three nodes in parallel
 dotnet test --filter "Name~LoadDisposalCollectionFlow" --logger "console;verbosity=detailed"
 
-# One node only
-dotnet test --filter "Name~E2E_Node2" --logger "console;verbosity=detailed"
+# Some nodes only
+dotnet test --filter "Name~E2E_Node1|Name~E2E_Node2" --logger "console;verbosity=detailed"
+dotnet test --filter "Name~E2E_Node3" --logger "console;verbosity=detailed"
 ```
 
-The two cases run at the same time (`[Parallelizable(ParallelScope.Children)]`, up to `LevelOfParallelism(3)` in `Properties/AssemblyInfo.cs`). Each case uses the node pair it names, not the shared node pool. A run takes about **4–5 minutes** per node, and the parallel run takes about as long as the slower node. Leave the emulators alone while it runs.
+The cases run at the same time: `[Parallelizable(ParallelScope.Children)]`, up to `LevelOfParallelism(3)` in `Properties/AssemblyInfo.cs`, which is exactly three nodes. Raise it if you add a fourth node. Each case uses the node pair it names, not the shared node pool. A run takes about **4–5 minutes** per node, and the parallel run takes about as long as the slower node. Leave the emulators alone while it runs.
 
-Both nodes pick the **first truck**. If the backend allows only one active load per truck, one node fails at the Driver scan step.
+All nodes pick the **first truck**. If the backend ever allows only one active load per truck, every node but the first will fail at the Driver scan step.
 
 ### How Mobile mode handles the camera
 
@@ -248,18 +267,35 @@ Both nodes pick the **first truck**. If the backend allows only one active load 
 |---|---|---|
 | Photos | Attached to the file input | Taken with the emulator camera (both fields block gallery uploads) |
 | QR scans (Driver × 2, Flex × 1) | The browser's fake camera shows the QR | **Scanner hand-off** (below) |
-| Location | Mocked browser GPS | GPS mock; if the app rejects the fix (it needs ≤ 15 ft accuracy), the location is picked on the map |
+| Location | Mocked browser GPS | GPS fix sent through the emulator console (see [Location](#location)) |
 
 **Scanner hand-off (`Utilities/QrScanFeed.cs`):**
 - **Why:** the emulator cameras can't show a chosen image on Android 12. The virtual scene camera only shows a black screen on Android 12 images, and a host virtual webcam such as OBS isn't visible to the emulator on Windows.
 - **How:** the test reads the QR image with ZXing.Net. Inside the app's WebView it then answers the ML Kit `BarcodeScanner` plugin: `startScan` reports the QR text once through the normal `barcodesScanned` event, instead of opening the camera.
 - **Coverage:** everything after the scan runs exactly as on a real device (validation, the load import, navigation). Only the camera reading the code is bypassed.
+- **QR images are read from the page, not screenshotted.** The Driver App draws its load QR as a PNG data URL, and the test takes those exact bytes. On the Android 12 emulator, an element screenshot came out cropped by a few pixels: it clipped a corner square, and the code couldn't be decoded.
+
+#### Location
+
+`CollectionLoadTicketFormPage.CaptureLocation`:
+- Appium's `mobile: setGeolocation` mock does **not** reach the app on these emulators. They keep reporting the default fix (Google HQ, 37.4220, -122.0840).
+- So the test sends the fix through the emulator console instead: `adb -s <serial> emu geo fix <lon> <lat>`, right before tapping the GPS button and every 2 seconds while waiting. A console fix arrives as a real GPS reading.
+- The location field only accepts a fix within 15 ft. The emulator's console fix sometimes reports 16 ft; the app then keeps the old location and offers **Use this location**. The test taps it rather than falling back to the map. The map opens on the centre of the US (Kansas), where the address lookup finds nothing.
+- If Street Name stays empty (the address lookup failed), the test sends the fix again and taps GPS once more. If that also fails, it stops with a clear message instead of timing out.
+- The address lookup for the mock point sometimes returns just *"Road"* as the street name. That passes, because the test compares the ticket with whatever the form filled in.
+
+#### Other emulator-specific handling
+
+- **Login:** on an emulator, the LOG IN tap sometimes only focuses the button. The test checks that the form went away and taps once more if needed. If it's still on the form, it fails and lists the error messages the app shows.
+- **Driver App tutorial (Android 13+):** SKIP is drawn under the status bar and is missing from the native screen layout. The test recognises the tutorial by its slides and taps SKIP inside the app's WebView.
+- **Assignment with a filled-in Position:** some accounts show *Position* instead of *Labor Category*. The test re-selects the Position so the assignment passes validation and the modal closes.
 
 ---
 
 ## Failure evidence and reports
 
 - **Failure files:** when a test fails, the screen, page text and page source of each app are saved to `bin/Debug/net10.0/` as `Failure_<test>_<timestamp>_Flex.*` and `..._DriverApp.*`. `<test>` ends in the node name (e.g. `..._E2E_Node2_A15_A13`). They're also attached to the test result. The `.html` file is the most useful one for fixing locators.
+- **Passwords are masked:** before the files are saved, the text of every password field, and the login password wherever it appears, is replaced with `********`. Failure files saved before this change may contain the password in plain text. Delete them and don't share them.
 - **HTML report:** generated after each run by `HtmlReportGenerator`.
 
 ## Troubleshooting
@@ -276,4 +312,12 @@ Both nodes pick the **first truck**. If the backend allows only one active load 
 | Driver App still has a load from an earlier run | The test cancels it automatically (it waits out the CONFIRM countdown) |
 | `LoginPassword setting is missing ... TestSettings:Node2:LoginPassword` | Node 2's email is set but its password isn't. Set it with `dotnet user-secrets set TestSettings:Node2:LoginPassword <value>` |
 | Node 2 fails at login or finds no project | The Node 2 account isn't set up like the Node 1 account (project/task assignment, form access) |
-| Emulators freeze or sessions time out only in parallel runs | The host is out of RAM. Close other apps, or run one node at a time |
+| Emulators freeze or sessions time out only in parallel runs | The host is out of RAM. Close other apps, start fewer nodes (`Start-MobileGrid.ps1 -Nodes 1,2`), and filter the run to those nodes |
+| An emulator window is missing from the screen | It opened off-screen or behind another window. Run `.\Setup\Start-MobileGrid.ps1 -Arrange` |
+| `Start-MobileGrid.ps1`: *... is not running at all: it failed to start* | Usually not enough free RAM for another emulator. Run fewer nodes (`-Nodes 1,2`), or close Android Studio, WSL and browsers |
+| `Node3 has no Flex account of its own` | Set `TestSettings:Node3:LoginEmail` and `LoginPassword` in user-secrets (same for Node2) |
+| `Start-MobileGrid.ps1`: *emulator-55xx is running 'X', not 'Y'* | The emulators were started on the wrong ports. Run `.\Setup\Start-MobileGrid.ps1 -Stop`, then start the grid again |
+| `Login as '...' did not leave the Log In screen` | Wrong password for that node's account, or the backend can't be reached. The message lists the error text the app showed |
+| *Street Name was not filled in ... (reverse geocoding failed twice)* | The emulator can't reach the address lookup (ArcGIS), or the GPS fix never arrived. Check the emulator's network, or run `adb -s <serial> emu geo fix -81.69 28.16` while the form is waiting |
+| `No QR code could be read from the staged image` | The QR image couldn't be decoded. Check the `QrCodes/*.png` attachment for a cropped or blank image |
+| Driver App stuck on the tutorial (Android 13+) | The WebView SKIP tap failed. Look for the SKIP button in the Driver failure `.html` |

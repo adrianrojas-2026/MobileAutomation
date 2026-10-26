@@ -65,6 +65,8 @@ public class CollectionLoadTicketFormPage : BasePage
     private By LatitudeInput => By.XPath("//app-form-detail//app-locationinput//input[@placeholder='Latitude']");
     private By LongitudeInput => By.XPath("//app-form-detail//app-locationinput//input[@placeholder='Longitude']");
     private By SelectFromMapLink => By.XPath("//app-form-detail//app-locationinput//u[normalize-space()='tap here']");
+    // Offered when the best fix is just outside the requested accuracy ("Best GPS accuracy: 16 feet. Requested: 15")
+    private By UseThisLocationButton => By.XPath("//app-form-detail//app-locationinput//ion-button[contains(normalize-space(), 'Use this location')]");
     private By MapLoader => By.CssSelector("div.map-loader");
     private By MapModalTitle => By.XPath("//app-location-selection-modal//ion-title[normalize-space()='Select Location']");
     private By MapConfirmButton => By.XPath("//app-location-selection-modal//ion-button[normalize-space()='Confirm']");
@@ -464,7 +466,7 @@ public class CollectionLoadTicketFormPage : BasePage
         {
             gotGps = wait.Until(_ =>
             {
-                if (HasRealCoordinates()) return true;
+                if (AcceptLowAccuracyFixIfOffered() || HasRealCoordinates()) return true;
                 InjectEmulatorGpsFix();
                 return false;
             });
@@ -517,12 +519,39 @@ public class CollectionLoadTicketFormPage : BasePage
     {
         try
         {
-            return new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds)).Until(_ => GetFieldValue("Street Name").Length > 0);
+            var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds));
+            wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+            return wait.Until(_ =>
+            {
+                // A Locate retry can come back just outside the accuracy limit; accepting it fills the address
+                AcceptLowAccuracyFixIfOffered();
+                return GetFieldValue("Street Name").Length > 0;
+            });
         }
         catch (WebDriverTimeoutException)
         {
             return false;
         }
+    }
+
+    // The emulator's console fix sometimes reports 16 ft against the field's 15 ft limit; the app then keeps the
+    // previous location and offers "Use this location" instead of filling it in. Accept that fix (it is the mock
+    // location) rather than falling back to the map, whose default view has no street address to look up
+    private bool AcceptLowAccuracyFixIfOffered()
+    {
+        var button = Driver.FindElements(UseThisLocationButton).FirstOrDefault(e => e.Displayed);
+        if (button == null) return false;
+
+        Console.WriteLine("📍 GPS fix is just outside the requested accuracy. Tapping 'Use this location'...");
+        try
+        {
+            button.Click();
+        }
+        catch (ElementClickInterceptedException)
+        {
+            ((IJavaScriptExecutor)Driver).ExecuteScript("arguments[0].click();", button);
+        }
+        return true;
     }
 
     // Emulators: Appium's mocked location doesn't always reach the app (it kept the emulator's default fix on

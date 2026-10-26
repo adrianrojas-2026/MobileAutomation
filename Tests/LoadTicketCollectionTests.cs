@@ -96,9 +96,10 @@ namespace RecoveryTrac.AutomatedTests
             _wait.Dispose();
         }
 
-        // Same E2E flow on both node pairs at once; Node2 logs in with its own Flex account (TestSettings:Node2)
+        // Same E2E flow on every node pair at once; Node2/Node3 log in with their own Flex accounts (TestSettings:Node<N>)
         [TestCase("Node1", TestName = "Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E_Node1_A14_A12")]
         [TestCase("Node2", TestName = "Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E_Node2_A15_A13")]
+        [TestCase("Node3", TestName = "Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E_Node3_A17_A16")]
         public void Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E(string node)
         {
             var driver = DriverFactory.DriverFlex;

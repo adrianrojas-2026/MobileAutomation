@@ -86,17 +86,34 @@ public static class QrScanFeed
         Console.WriteLine($"🔳 Scanner primed with the staged QR code ({qrText.Length} characters).");
     }
 
+    // Frame sizes tried when decoding. Dense codes (the disposal QR is ~125 modules) need several pixels per module:
+    // squeezed into the 640x480 camera frame they get ~3 px each and nearest-neighbour scaling leaves them uneven
+    private static readonly (int Width, int Height)[] DecodeFrames =
+        [(1200, 1200), (1600, 1600), (FakeCameraFeed.Width, FakeCameraFeed.Height)];
+
     // Text encoded in a QR code image
     public static string Decode(byte[] qrPng, IWebDriver rasterizer)
     {
-        byte[] luma = FakeCameraFeed.RasterizeLuma(qrPng, rasterizer);
-        var source = new PlanarYUVLuminanceSource(luma, FakeCameraFeed.Width, FakeCameraFeed.Height, 0, 0,
-            FakeCameraFeed.Width, FakeCameraFeed.Height, false);
         var reader = new BarcodeReaderGeneric
         {
             Options = { PossibleFormats = [BarcodeFormat.QR_CODE], TryHarder = true }
         };
-        return reader.Decode(source)?.Text
-            ?? throw new InvalidOperationException("No QR code could be read from the staged image.");
+        // The staged codes are clean, upright app renders, so PureBarcode can skip the finder-pattern detector,
+        // which misreads some codes' data as a finder (e.g. a Node1 driver load QR that only decoded at one frame size)
+        var pureReader = new BarcodeReaderGeneric
+        {
+            Options = { PossibleFormats = [BarcodeFormat.QR_CODE], PureBarcode = true }
+        };
+        foreach (var (width, height) in DecodeFrames)
+        {
+            byte[] luma = FakeCameraFeed.RasterizeLuma(qrPng, rasterizer, width, height);
+            var source = new PlanarYUVLuminanceSource(luma, width, height, 0, 0, width, height, false);
+            string? text = reader.Decode(source)?.Text ?? pureReader.Decode(source)?.Text;
+            if (text != null)
+            {
+                return text;
+            }
+        }
+        throw new InvalidOperationException("No QR code could be read from the staged image.");
     }
 }

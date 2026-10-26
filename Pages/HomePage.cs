@@ -297,8 +297,10 @@ public class HomePage : BasePage
     // pre-assigned task (the WebView exposes the HTML id as resource-id)
     private static readonly By MobilePositionValue = By.XPath("//*[@resource-id='projectTask9']");
 
+    // The field itself has no text; the chosen position is in its child TextView
     private static string GetMobilePositionText() =>
-        DriverFactory.DriverFlex.FindElements(MobilePositionValue).FirstOrDefault(e => e.Displayed)?.Text?.Trim() ?? string.Empty;
+        DriverFactory.DriverFlex.FindElements(By.XPath("//*[@resource-id='projectTask9']//android.widget.TextView"))
+            .Select(e => e.Text?.Trim() ?? string.Empty).FirstOrDefault(t => t.Length > 0) ?? string.Empty;
 
     private void HandleMobileFormPreamble(OpenQA.Selenium.Support.UI.WebDriverWait wf)
     {
@@ -327,6 +329,18 @@ public class HomePage : BasePage
             catch (Exception) { return null; }
         });
         System.Threading.Thread.Sleep(800);
+
+        // Projects with positions (field activities, e.g. 474) show Position instead of Task. An account that was
+        // never clocked in (e.g. the Node3 user) gets here with Position empty, so wait for whichever field appears
+        string nextField = wf.Until(d =>
+            d.FindElements(MobilePositionValue).Any(e => e.Displayed) ? "position"
+            : d.FindElements(TaskDropdown).Any(e => e.Displayed) ? "task"
+            : null);
+        if (nextField == "position")
+        {
+            Console.WriteLine("⏩ Project uses positions. Skipping Task selection.");
+            return;
+        }
 
         // Select Task
         var taskField = wf.Until(d => d.FindElement(TaskDropdown));
@@ -431,31 +445,37 @@ public class HomePage : BasePage
                 return;
             }
         }
-        else
+        else if (DriverFactory.DriverFlex.FindElements(MobilePositionValue).Any(e => e.Displayed))
         {
             string positionText = GetMobilePositionText();
             if (positionText.Length > 0)
             {
                 Console.WriteLine($"📱 Position already set ('{positionText}'). Re-selecting it so the form validates.");
-                wf.Until(d => d.FindElements(MobilePositionValue).FirstOrDefault(e => e.Displayed)).Click();
-                System.Threading.Thread.Sleep(800);
-
-                // The picker lists the options over the modal; skip the field label it was opened from
-                wf.Until(d =>
-                {
-                    try
-                    {
-                        var option = d.FindElements(By.XPath($"//*[contains(@text, '{positionText}')][not(@resource-id='projectTask9')]"))
-                            .LastOrDefault(o => o.Displayed);
-                        if (option == null) return false;
-                        option.Click();
-                        return true;
-                    }
-                    catch (Exception) { return false; }
-                });
-                System.Threading.Thread.Sleep(800);
-                return;
             }
+            else
+            {
+                // Same pick as the Labor Category path (ProjectManagerOption)
+                positionText = "PROJECT MANAGER";
+                Console.WriteLine($"📱 Position is empty. Selecting '{positionText}'...");
+            }
+            wf.Until(d => d.FindElements(MobilePositionValue).FirstOrDefault(e => e.Displayed)).Click();
+            System.Threading.Thread.Sleep(800);
+
+            // The picker lists the options over the modal; skip the field label it was opened from
+            wf.Until(d =>
+            {
+                try
+                {
+                    var option = d.FindElements(By.XPath($"//*[contains(@text, '{positionText}')][not(ancestor-or-self::*[@resource-id='projectTask9'])]"))
+                        .LastOrDefault(o => o.Displayed);
+                    if (option == null) return false;
+                    option.Click();
+                    return true;
+                }
+                catch (Exception) { return false; }
+            });
+            System.Threading.Thread.Sleep(800);
+            return;
         }
 
         var laborDropdown = wf.Until(d => d.FindElement(LaborCategoryDropdown));

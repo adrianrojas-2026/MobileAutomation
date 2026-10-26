@@ -269,9 +269,18 @@ public static class DriverFactory
     // Parallel nodes need their own Flex account, or each one sees the other's submitted tickets
     private static void SetLoginCredentials(IConfiguration config, string? node)
     {
-        string prefix = node != null && config[$"TestSettings:{node}:LoginEmail"] != null
-            ? $"TestSettings:{node}"
-            : "TestSettings";
+        bool hasOwnAccount = node != null && config[$"TestSettings:{node}:LoginEmail"] != null;
+
+        // Nodes run in parallel, and on a shared account each node sees the others' new tickets, so only Node1 (or a
+        // run without a node) may fall back to the default account
+        if (node != null && !hasOwnAccount && !string.Equals(node, "Node1", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"{node} has no Flex account of its own. Set it with 'dotnet user-secrets set TestSettings:{node}:LoginEmail <value>' " +
+                $"and 'dotnet user-secrets set TestSettings:{node}:LoginPassword <value>'.");
+        }
+
+        string prefix = hasOwnAccount ? $"TestSettings:{node}" : "TestSettings";
 
         _loginEmail.Value = config[$"{prefix}:LoginEmail"]
             ?? throw new InvalidOperationException($"LoginEmail setting is missing. Set it with 'dotnet user-secrets set {prefix}:LoginEmail <value>'.");
