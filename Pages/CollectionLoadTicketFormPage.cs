@@ -65,6 +65,8 @@ public class CollectionLoadTicketFormPage : BasePage
     private By LatitudeInput => By.XPath("//app-form-detail//app-locationinput//input[@placeholder='Latitude']");
     private By LongitudeInput => By.XPath("//app-form-detail//app-locationinput//input[@placeholder='Longitude']");
     private By SelectFromMapLink => By.XPath("//app-form-detail//app-locationinput//u[normalize-space()='tap here']");
+    // Offered when the best fix is just outside the requested accuracy ("Best GPS accuracy: 16 feet. Requested: 15")
+    private By UseThisLocationButton => By.XPath("//app-form-detail//app-locationinput//ion-button[contains(normalize-space(), 'Use this location')]");
     private By MapLoader => By.CssSelector("div.map-loader");
     private By MapModalTitle => By.XPath("//app-location-selection-modal//ion-title[normalize-space()='Select Location']");
     private By MapConfirmButton => By.XPath("//app-location-selection-modal//ion-button[normalize-space()='Confirm']");
@@ -452,16 +454,22 @@ public class CollectionLoadTicketFormPage : BasePage
     // Clicks the GPS button; if no precise fix arrives, confirms a location from the map instead
     public (string Latitude, string Longitude) CaptureLocation(int gpsTimeoutSeconds = 20)
     {
+        InjectEmulatorGpsFix();
         ScrollAndClick(LocateButton);
 
         // Prefer GPS: the "tap here" map link can show while the fix is still being acquired, so it only
         // decides the outcome once GPS has had its full timeout (the app fills 0,0 as a best estimate)
-        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(gpsTimeoutSeconds));
+        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(gpsTimeoutSeconds)) { PollingInterval = TimeSpan.FromSeconds(2) };
         wait.IgnoreExceptionTypes(typeof(NoSuchElementException), typeof(StaleElementReferenceException));
         bool gotGps;
         try
         {
-            gotGps = wait.Until(_ => HasRealCoordinates());
+            gotGps = wait.Until(_ =>
+            {
+                if (AcceptLowAccuracyFixIfOffered() || HasRealCoordinates()) return true;
+                InjectEmulatorGpsFix();
+                return false;
+            });
         }
         catch (WebDriverTimeoutException)
         {
@@ -488,12 +496,74 @@ public class CollectionLoadTicketFormPage : BasePage
         }
 
         new WebDriverWait(Driver, TimeSpan.FromSeconds(30)).Until(_ => HasRealCoordinates());
-        // Address Number / Street Name are reverse-geocoded from the coordinates
-        new WebDriverWait(Driver, TimeSpan.FromSeconds(30)).Until(_ => GetFieldValue("Street Name").Length > 0);
+        // Address Number / Street Name are reverse-geocoded from the coordinates. The lookup sometimes fails
+        // ("Failed to fetch your address"), so ask for the location once more before giving up
+        if (!WaitForStreetName(30))
+        {
+            Console.WriteLine("📍 Address lookup failed. Requesting the location again...");
+            InjectEmulatorGpsFix();
+            ScrollAndClick(LocateButton);
+            if (!WaitForStreetName(30))
+            {
+                throw new WebDriverTimeoutException(
+                    $"Street Name was not filled in for {ReadInputValue(LatitudeInput)}, {ReadInputValue(LongitudeInput)} (reverse geocoding failed twice).");
+            }
+        }
 
         var location = (ReadInputValue(LatitudeInput), ReadInputValue(LongitudeInput));
         Console.WriteLine($"📍 Location captured: {location.Item1}, {location.Item2} ({GetFieldValue("Address Number")} {GetFieldValue("Street Name")})");
         return location;
+    }
+
+    private bool WaitForStreetName(int timeoutSeconds)
+    {
+        try
+        {
+            var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds));
+            wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+            return wait.Until(_ =>
+            {
+                // A Locate retry can come back just outside the accuracy limit; accepting it fills the address
+                AcceptLowAccuracyFixIfOffered();
+                return GetFieldValue("Street Name").Length > 0;
+            });
+        }
+        catch (WebDriverTimeoutException)
+        {
+            return false;
+        }
+    }
+
+    // The emulator's console fix sometimes reports 16 ft against the field's 15 ft limit; the app then keeps the
+    // previous location and offers "Use this location" instead of filling it in. Accept that fix (it is the mock
+    // location) rather than falling back to the map, whose default view has no street address to look up
+    private bool AcceptLowAccuracyFixIfOffered()
+    {
+        var button = Driver.FindElements(UseThisLocationButton).FirstOrDefault(e => e.Displayed);
+        if (button == null) return false;
+
+        Console.WriteLine("📍 GPS fix is just outside the requested accuracy. Tapping 'Use this location'...");
+        try
+        {
+            button.Click();
+        }
+        catch (ElementClickInterceptedException)
+        {
+            ((IJavaScriptExecutor)Driver).ExecuteScript("arguments[0].click();", button);
+        }
+        return true;
+    }
+
+    // Emulators: Appium's mocked location doesn't always reach the app (it kept the emulator's default fix on
+    // Android 15), so also send the mock fix through the emulator console, which arrives as a real GPS reading
+    private void InjectEmulatorGpsFix()
+    {
+        if (Driver is not AndroidDriver androidDriver) return;
+        string? udid = AdbHelper.GetUdid(androidDriver);
+        if (udid == null || !udid.StartsWith("emulator-")) return;
+
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        AdbHelper.Run(udid, $"emu geo fix {MockLongitude.ToString(culture)} {MockLatitude.ToString(culture)} 0", timeoutMs: 5000);
     }
 
     private bool HasRealCoordinates()

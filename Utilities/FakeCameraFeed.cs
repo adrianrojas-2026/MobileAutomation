@@ -48,10 +48,10 @@ public static class FakeCameraFeed
         Console.WriteLine($"🎥 Fake camera now shows the staged QR code ({Path.GetFileName(path)}).");
     }
 
-    // Width x Height greyscale (one byte per pixel) of the PNG, centred on white
-    internal static byte[] RasterizeLuma(byte[] png, IWebDriver rasterizer)
+    // width x height greyscale (one byte per pixel) of the PNG, centred on white
+    internal static byte[] RasterizeLuma(byte[] png, IWebDriver rasterizer, int width = Width, int height = Height)
     {
-        var lumaBase64 = ((IJavaScriptExecutor)rasterizer).ExecuteAsyncScript(RasterizeScript, Convert.ToBase64String(png), Width, Height) as string
+        var lumaBase64 = ((IJavaScriptExecutor)rasterizer).ExecuteAsyncScript(RasterizeScript, Convert.ToBase64String(png), width, height) as string
             ?? throw new InvalidOperationException("The browser could not decode the QR code image.");
         return Convert.FromBase64String(lumaBase64);
     }

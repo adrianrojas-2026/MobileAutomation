@@ -152,6 +152,22 @@ public class DriverHomePage : BasePage
             ((IJavaScriptExecutor)d).ExecuteScript(FindLargestQrScript) as IWebElement);
         ScrollIntoView(qr);
         Thread.Sleep(500); // Let the QR finish rendering/fading in before the capture
+
+        // The app renders the QR as a PNG data URL (img) or a canvas: take those exact pixels. An element screenshot
+        // on an emulator can be cropped by a few pixels (it clipped a finder pattern on Android 12) and then no
+        // longer decodes
+        var dataUrl = ((IJavaScriptExecutor)Driver).ExecuteScript(QrDataUrlScript, qr) as string;
+        const string pngPrefix = "data:image/png;base64,";
+        if (dataUrl != null && dataUrl.StartsWith(pngPrefix, StringComparison.Ordinal))
+        {
+            return Convert.FromBase64String(dataUrl[pngPrefix.Length..]);
+        }
         return ((ITakesScreenshot)qr).GetScreenshot().AsByteArray;
     }
+
+    private const string QrDataUrlScript =
+        "const el = arguments[0];" +
+        "if (el.tagName === 'IMG') return el.currentSrc || el.src;" +
+        "if (el.tagName === 'CANVAS') { try { return el.toDataURL('image/png'); } catch (e) { return null; } }" +
+        "return null;";
 }

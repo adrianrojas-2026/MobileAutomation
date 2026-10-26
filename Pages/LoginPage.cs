@@ -113,8 +113,45 @@ public class LoginPage : BasePage
             Console.WriteLine("Executing complete login credentials workflow...");
             LoginTrac(username, password);
 
+            // On an emulator the LOG IN tap sometimes only focuses the button (it stays on the form with the
+            // fields filled in), so confirm the form went away and tap once more before giving up
+            if (!HasLeftLoginForm(timeoutSeconds: 20))
+            {
+                Console.WriteLine("⚠️ Still on the Log In form after submitting. Tapping LOG IN again...");
+                Click(LogInButton);
+                if (!HasLeftLoginForm(timeoutSeconds: 30))
+                {
+                    throw new InvalidOperationException(
+                        $"Login as '{username}' did not leave the Log In screen. Visible messages: {DescribeVisibleErrors()}");
+                }
+            }
+
             // Synchronize on Initial Sync Spinner immediately following submission
             WaitForSyncToComplete();
         }
+    }
+
+    private bool HasLeftLoginForm(int timeoutSeconds)
+    {
+        try
+        {
+            var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds));
+            wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+            return wait.Until(d => d.FindElements(LoggedInMarker).Any(e => e.Displayed) || !d.FindElements(LogInButton).Any(e => e.Displayed));
+        }
+        catch (WebDriverTimeoutException)
+        {
+            return false;
+        }
+    }
+
+    // Toasts/alerts the app shows on a failed login (e.g. bad credentials, "Unable to reach server")
+    private string DescribeVisibleErrors()
+    {
+        By errors = Driver is OpenQA.Selenium.Appium.Android.AndroidDriver
+            ? By.XPath("//*[contains(@text, 'nable') or contains(@text, 'nvalid') or contains(@text, 'rror') or contains(@text, 'ailed') or contains(@text, 'incorrect')]")
+            : By.CssSelector("ion-toast, ion-alert, .loginError, .error-message");
+        var texts = Driver.FindElements(errors).Where(e => e.Displayed).Select(Describe).Where(t => t.Length > 0).ToList();
+        return texts.Count > 0 ? string.Join(" | ", texts) : "none";
     }
 }

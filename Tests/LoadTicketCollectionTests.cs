@@ -8,6 +8,7 @@ using MobileAutomation.Tests.Utilities;
 namespace RecoveryTrac.AutomatedTests
 {
     [TestFixture]
+    [Parallelizable(ParallelScope.Children)]
     public class LoadTicketCollectionTests : BaseTest
     {
         private const string FormName = "Load - Collection";
@@ -19,7 +20,8 @@ namespace RecoveryTrac.AutomatedTests
         [SetUp]
         public void SetupLoadTicketScenario()
         {
-            DriverFactory.InitializeDualApps();
+            // Each test case runs on the node pair it names (Grid_<node>_Flex + Grid_<node>_Driver)
+            DriverFactory.InitializeDualApps((string)TestContext.CurrentContext.Test.Arguments[0]!);
             int timeoutSeconds = int.Parse(TestConfiguration.Configuration["TestSettings:ExplicitWaitTimeoutSeconds"] ?? "15");
             _wait.Value = new WebDriverWait(DriverFactory.DriverFlex, TimeSpan.FromSeconds(timeoutSeconds));
 
@@ -57,7 +59,7 @@ namespace RecoveryTrac.AutomatedTests
                 // screenshot and page source
                 try
                 {
-                    File.WriteAllText(evidencePath + ".txt", $"URL: {driver.Url}{Environment.NewLine}{driver.FindElement(OpenQA.Selenium.By.TagName("body")).Text}");
+                    File.WriteAllText(evidencePath + ".txt", MaskPasswords($"URL: {driver.Url}{Environment.NewLine}{driver.FindElement(OpenQA.Selenium.By.TagName("body")).Text}"));
                     TestContext.AddTestAttachment(evidencePath + ".txt", $"{app} page text at failure");
                 }
                 catch (OpenQA.Selenium.WebDriverException)
@@ -65,7 +67,7 @@ namespace RecoveryTrac.AutomatedTests
                 }
 
                 // DOM at failure, so changed form controls can be re-located without re-running the flow
-                File.WriteAllText(evidencePath + ".html", driver.PageSource);
+                File.WriteAllText(evidencePath + ".html", MaskPasswords(driver.PageSource));
                 TestContext.AddTestAttachment(evidencePath + ".html", $"{app} page source at failure");
                 Console.WriteLine($"📸 {app} failure evidence saved to: {evidencePath}.png/.txt/.html");
             }
@@ -75,14 +77,30 @@ namespace RecoveryTrac.AutomatedTests
             }
         }
 
+        // Evidence files get attached to test results, so never write the login password into them. Android's page
+        // source exposes a password field's value as its text (password="true"); the literal replace also covers any
+        // copy of it in the Web DOM (e.g. an ng-reflect-model attribute) or the page text
+        private static string MaskPasswords(string content)
+        {
+            content = System.Text.RegularExpressions.Regex.Replace(content,
+                @"(<[^>]*\bpassword=""true""[^>]*\btext="")[^""]*("")|(<[^>]*\btext="")[^""]*(""[^>]*\bpassword=""true"")",
+                m => m.Groups[1].Success ? $"{m.Groups[1].Value}********{m.Groups[2].Value}" : $"{m.Groups[3].Value}********{m.Groups[4].Value}");
+
+            string password = DriverFactory.LoginPassword;
+            return string.IsNullOrEmpty(password) ? content : content.Replace(password, "********");
+        }
+
         [OneTimeTearDown]
         public void FinalizeClassDisposal()
         {
             _wait.Dispose();
         }
 
-        [Test]
-        public void Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E()
+        // Same E2E flow on every node pair at once; Node2/Node3 log in with their own Flex accounts (TestSettings:Node<N>)
+        [TestCase("Node1", TestName = "Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E_Node1_A14_A12")]
+        [TestCase("Node2", TestName = "Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E_Node2_A15_A13")]
+        [TestCase("Node3", TestName = "Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E_Node3_A17_A16")]
+        public void Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E(string node)
         {
             var driver = DriverFactory.DriverFlex;
             var wf = _wait.Value!;
@@ -206,7 +224,7 @@ namespace RecoveryTrac.AutomatedTests
             // -------------------------------------------------------------------------
             ticketForm.ClickNext();
             ticketForm.WaitForStep("Review & Submit");
-            ticketForm.EnterNotes($"Automated test - {nameof(Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E)} {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            ticketForm.EnterNotes($"Automated test - {nameof(Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E)} {node} {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             ticketForm.Submit();
             ticketForm.ProceedWithQrGeneration();
 
@@ -218,7 +236,7 @@ namespace RecoveryTrac.AutomatedTests
 
             string qrDirectory = Path.Combine(TestContext.CurrentContext.WorkDirectory, "QrCodes");
             Directory.CreateDirectory(qrDirectory);
-            string qrPath = Path.Combine(qrDirectory, $"CollectionLoadTicket_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+            string qrPath = Path.Combine(qrDirectory, $"CollectionLoadTicket_{node}_{DateTime.Now:yyyyMMdd_HHmmss}.png");
             File.WriteAllBytes(qrPath, qrPng);
             TestContext.AddTestAttachment(qrPath, "Generated Collection Load Ticket QR code");
             Console.WriteLine($"🔳 QR code stored at: {qrPath}");
@@ -281,7 +299,7 @@ namespace RecoveryTrac.AutomatedTests
 
             // The driver's load QR is what the disposal site scans; stage it on the Flex camera
             byte[] driverQrPng = driverHome.GetCurrentLoadQrPng();
-            string driverQrPath = Path.Combine(qrDirectory, $"DriverCurrentLoad_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+            string driverQrPath = Path.Combine(qrDirectory, $"DriverCurrentLoad_{node}_{DateTime.Now:yyyyMMdd_HHmmss}.png");
             File.WriteAllBytes(driverQrPath, driverQrPng);
             TestContext.AddTestAttachment(driverQrPath, "Driver app current load QR code");
             QrScanFeed.Stage(driver, driverQrPng, rasterizer: driver, DriverFactory.FlexCameraFeedPath);
@@ -364,7 +382,7 @@ namespace RecoveryTrac.AutomatedTests
             }
             Assert.That(disposalQrPng, Is.Not.Null.And.Not.Empty, "The disposal ticket QR code image is empty.");
 
-            string disposalQrPath = Path.Combine(qrDirectory, $"LoadDisposal_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+            string disposalQrPath = Path.Combine(qrDirectory, $"LoadDisposal_{node}_{DateTime.Now:yyyyMMdd_HHmmss}.png");
             File.WriteAllBytes(disposalQrPath, disposalQrPng!);
             TestContext.AddTestAttachment(disposalQrPath, "Generated Load - Disposal QR code");
             Console.WriteLine($"🔳 Disposal QR code stored at: {disposalQrPath}");
