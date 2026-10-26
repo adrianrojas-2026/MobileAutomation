@@ -252,6 +252,7 @@ public static class DriverFactory
         var aspirePorts = config.GetSection("TestSettings:AspireServicePorts").GetChildren()
             .Select(port => int.Parse(port.Value!)).ToArray();
         AdbHelper.ReversePorts(envFlexSection["Udid"], aspirePorts);
+        AdbHelper.CollapseNotificationShade(envFlexSection["Udid"]);
 
         // 2. INITIALIZE RECOVERY TRAC DRIVER
         var envDriverSection = config.GetSection($"MobileConfigurations:{environmentDriver}");
@@ -260,6 +261,7 @@ public static class DriverFactory
         {
             var driverApp = new AndroidDriver(new Uri(serverUrl), optionsDriver);
             AdbHelper.ReversePorts(envDriverSection["Udid"], aspirePorts);
+            AdbHelper.CollapseNotificationShade(envDriverSection["Udid"]);
             return driverApp;
         };
 

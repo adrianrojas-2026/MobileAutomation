@@ -55,6 +55,21 @@ public static class AdbHelper
             : $"⚠️ Could not forward {failed} of {ports.Count} Aspire service ports to {udid}; the app may not reach the local backend.");
     }
 
+    // A notification shade left open (e.g. by a click-drag on the emulator window) covers the app, and every
+    // locator then times out. Collapsing it when it is already closed does nothing.
+    public static void CollapseNotificationShade(string? udid)
+    {
+        if (string.IsNullOrWhiteSpace(udid)) return;
+        try
+        {
+            Run(udid, "shell cmd statusbar collapse", 10000);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ Could not collapse the notification shade on {udid}: {ex.Message}");
+        }
+    }
+
     // Copies an image into the device's Pictures folder as the newest photo, so the photo picker lists it first
     public static string PushToGallery(string udid, string imagePath)
     {
