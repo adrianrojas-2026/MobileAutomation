@@ -1,7 +1,7 @@
 # Project Status
 
-**Last Updated**: 2026-10-15 12:20
-**Updated By**: AIRE_INITIALIZER
+**Last Updated**: 2026-10-27
+**Updated By**: QA
 **Overall Status**: 🟡 IN PROGRESS
 
 ---
@@ -35,7 +35,7 @@
 | Patterns | ⏸️ Not Started | AIRE_ARCHITECT | — | — | 2026-10-15 12:20 |
 | Implementation Plan | ⏸️ Not Started | AIRE_PRODUCT_OWNER | — | — | 2026-10-15 12:20 |
 | Review | ⏸️ Not Started | AIRE_REVIEWER | — | — | 2026-10-15 12:20 |
-| QA | ⏸️ Not Started | AIRE_QA | — | — | 2026-10-15 12:20 |
+| QA | 🟡 In Progress | AIRE_QA | 2026-10-27 | `docs/testing/test-plan-ble-ticket-handoff.md` | 2026-10-27 |
 
 ---
 
@@ -51,6 +51,19 @@
 - [x] Project kickoff — tracking initialized ✅
 - [ ] Run `aire-brownfield-inspect`
 - [ ] Produce `docs/architecture/current/00-system-overview.md`
+
+### QA - Test Plan (BLE Ticket Handoff POC)
+
+**Owner**: AIRE_QA
+**Status**: 🟡 In Progress
+**Started**: 2026-10-27
+
+**Progress**:
+- [x] Test plan created (scope: BLE Ticket Handoff POC, FR-1…FR-7 + demo checks 1–7) → `docs/testing/test-plan-ble-ticket-handoff.md`
+- [x] Test scenarios (QR baseline + BLE) → `docs/testing/test-scenarios-ble-ticket-handoff.md`
+- [x] Part A (QR baseline) implemented and run on Node3 (2026-10-27): 7 passed, 2 warnings (findings), 0 failed. Report: `bin/Debug/net10.0/Reports/QrBaselineReport_latest.html`
+- [ ] Day-1 spike: emulator virtual Bluetooth + demo phones
+- [ ] Run `aire-qa-validate`
 
 ---
 
@@ -108,9 +121,10 @@ _Stories `X/N` column is advisory after parallel merges; compute from Story Trac
 
 ## Upcoming
 
-1. **System Discovery**: `aire-brownfield-inspect` — next to run
-2. **Deep-Dive**: `aire-brownfield-deep-dive`
-3. **Requirements**: `aire-brownfield-requirements`
+1. **QA Validate**: `aire-qa-validate` — execute the BLE test plan
+2. **System Discovery**: `aire-brownfield-inspect`
+3. **Deep-Dive**: `aire-brownfield-deep-dive`
+4. **Requirements**: `aire-brownfield-requirements`
 
 ---
 
@@ -133,4 +147,4 @@ _Stories `X/N` column is advisory after parallel merges; compute from Story Trac
 | BUILD_CYCLE_PLANNER | — | Standby | — | 2026-10-15 12:20 |
 | DEV | — | Standby | — | 2026-10-15 12:20 |
 | REVIEWER | — | Standby | — | 2026-10-15 12:20 |
-| QA | — | Standby | — | 2026-10-15 12:20 |
+| QA | Test plan created (BLE Ticket Handoff POC) | Active | 2026-10-27 | 2026-10-27 |

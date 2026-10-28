@@ -76,20 +76,28 @@ public class FormsPage : BasePage
         return Driver.FindElements(TicketIdLabels).Select(e => e.Text.Trim()).Where(t => t.Length > 0).ToList();
     }
 
-    // Reads the "Label: value" rows (Truck Capacity, Driver Name, ...) from a submitted ticket card
+    // Reads the "Label: value" rows (Truck Capacity, Driver Name, ...) from a submitted ticket card. The list
+    // re-renders when a card's sync status changes, so a card that goes stale mid-read is read again
     public Dictionary<string, string> GetSubmittedCardValues(string ticketId)
     {
-        var card = Find(SubmittedCard(ticketId));
-        var values = new Dictionary<string, string>();
-        foreach (var row in card.FindElements(By.CssSelector("div.item-data")))
+        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(30));
+        wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        return wait.Until(d =>
         {
-            var spans = row.FindElements(By.TagName("span"));
-            if (spans.Count >= 2)
+            var card = d.FindElements(SubmittedCard(ticketId)).FirstOrDefault();
+            if (card == null) return null;
+
+            var values = new Dictionary<string, string>();
+            foreach (var row in card.FindElements(By.CssSelector("div.item-data")))
             {
-                values[spans[0].Text.Trim().TrimEnd(':')] = spans[1].Text.Trim();
+                var spans = row.FindElements(By.TagName("span"));
+                if (spans.Count >= 2)
+                {
+                    values[spans[0].Text.Trim().TrimEnd(':')] = spans[1].Text.Trim();
+                }
             }
-        }
-        return values;
+            return values;
+        });
     }
 
     // QR icon in the top-right corner of a submitted card (next to Print on Load - Disposal); opens the QR modal

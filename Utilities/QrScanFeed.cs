@@ -73,7 +73,17 @@ public static class QrScanFeed
             return;
         }
 
-        string qrText = Decode(qrPng, rasterizer);
+        StageText(androidDriver, Decode(qrPng, rasterizer));
+    }
+
+    // Device only: hands the scanner a code's text directly, including text no real QR would carry (a truncated or
+    // altered ticket), to see how the app's scan handling treats it
+    public static void StageText(IWebDriver appDriver, string qrText)
+    {
+        if (appDriver is not AndroidDriver androidDriver)
+        {
+            throw new InvalidOperationException("StageText needs a device session; in Web mode stage a QR image with Stage().");
+        }
         if (!androidDriver.Context.StartsWith("WEBVIEW", StringComparison.Ordinal))
         {
             throw new InvalidOperationException("The app must be in its WEBVIEW context before staging a QR code.");

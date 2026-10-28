@@ -418,11 +418,21 @@ public class CollectionLoadTicketFormPage : BasePage
                         ["accuracy"] = 1
                     });
                 }
-                catch (WebDriverException)
+                catch (Exception)
                 {
-                    // Older UiAutomator2 drivers lack mobile: setGeolocation; the plain location is less accurate, so
-                    // the location step may still fall back to the map
-                    androidDriver.Location = new OpenQA.Selenium.Appium.Location { Latitude = latitude, Longitude = longitude, Altitude = 0 };
+                    // Older UiAutomator2 drivers lack mobile: setGeolocation (the client does not always surface that
+                    // as a WebDriverException). Their plain location (~16 ft) is too
+                    // coarse for the field, so set the 1 m fix through Appium Settings over adb instead
+                    string? udid = AdbHelper.GetUdid(androidDriver);
+                    if (udid != null && AdbHelper.MockLocation(udid, latitude, longitude, accuracyMeters: 1))
+                    {
+                        Console.WriteLine("📍 Mocked a 1 m GPS fix through Appium Settings (mobile: setGeolocation is not available).");
+                    }
+                    else
+                    {
+                        // Less accurate, so the location step may still fall back to the map
+                        androidDriver.Location = new OpenQA.Selenium.Appium.Location { Latitude = latitude, Longitude = longitude, Altitude = 0 };
+                    }
                 }
                 finally
                 {

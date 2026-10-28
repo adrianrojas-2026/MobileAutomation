@@ -4,6 +4,9 @@ using OpenQA.Selenium.Support.UI;
 
 namespace MobileAutomation.Tests.Pages.Driver;
 
+// An Ionic alert the Driver app showed, and the button the test closed it with
+public record DriverAlert(string Header, string Message, IReadOnlyList<string> Buttons, string ClickedButton);
+
 // RecoveryTrac Driver app Home (#/home): the CURRENT LOAD card and its QR code, plus the Scan QR Code button.
 // DOM locators: Web mode only for now (the emulator camera flow is not automated).
 public class DriverHomePage : BasePage
@@ -51,10 +54,35 @@ public class DriverHomePage : BasePage
 
     public string CurrentLoad => FindVisible(CurrentLoadValue, 10)?.Text.Trim() ?? string.Empty;
 
-    // Stage the QR first (QrScanFeed.Stage); on a device the page objects here run in the app's WEBVIEW context
-    public void ScanQrCode()
+    public bool HasActiveLoad
     {
-        CancelStaleLoadIfPresent();
+        get
+        {
+            string load = CurrentLoad;
+            return load.Length > 0 && !load.Equals(NoActiveLoad, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    // Whether the last WaitForActiveLoad had to acknowledge a 'Possible Duplicate Load' alert
+    public bool DuplicateLoadAlertShown { get; private set; }
+
+    public bool IsScanQrCodeShown(int timeoutSeconds = 5) => FindVisible(ScanQrCodeButton, timeoutSeconds) != null;
+
+    // Captions of the visible Home buttons (Scan QR Code, or Scan Receipt Code / Cancel Load with an active load)
+    public IReadOnlyList<string> VisibleHomeActions() =>
+        Driver.FindElements(By.CssSelector("app-home ion-button, app-home button"))
+            .Where(e => e.Displayed)
+            .Select(e => e.Text.Trim())
+            .Where(t => t.Length > 0)
+            .Distinct()
+            .ToList();
+
+    // Stage the QR first (QrScanFeed.Stage); on a device the page objects here run in the app's WEBVIEW context.
+    // cancelActiveLoad: false scans on top of the current load, as a driver scanning a second ticket would; Scan QR
+    // Code must then still be offered
+    public void ScanQrCode(bool cancelActiveLoad = true)
+    {
+        if (cancelActiveLoad) CancelStaleLoadIfPresent();
         ClickVisible(ScanQrCodeButton, "Scan QR Code");
     }
 
@@ -79,7 +107,7 @@ public class DriverHomePage : BasePage
 
     // A load left over from an earlier (aborted) run replaces Scan QR Code with Scan Receipt Code / Cancel Load,
     // so cancel it to start from "No Active Load"
-    private void CancelStaleLoadIfPresent()
+    public void CancelStaleLoadIfPresent()
     {
         var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(30));
         wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
@@ -122,6 +150,7 @@ public class DriverHomePage : BasePage
     {
         var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds));
         wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        DuplicateLoadAlertShown = false;
         try
         {
             return wait.Until(d =>
@@ -130,6 +159,7 @@ public class DriverHomePage : BasePage
                 if (duplicateOk != null)
                 {
                     Console.WriteLine("⚠️ Driver app: 'Possible Duplicate Load' alert shown for the scanned QR code. Acknowledging it with OK.");
+                    DuplicateLoadAlertShown = true;
                     duplicateOk.Click();
                     return null;
                 }
@@ -143,6 +173,32 @@ public class DriverHomePage : BasePage
             throw new WebDriverTimeoutException(
                 $"The Driver app did not pick up a load after scanning (Current Load: '{CurrentLoad}'). Check that the scanner read the collection QR code.", ex);
         }
+    }
+
+    // Waits for an alert (e.g. an invalid or duplicate code after a scan), records it and closes it with its cancel
+    // button when it has one, so the app's state is left as the scan made it. Null when no alert shows up
+    public DriverAlert? CaptureAndDismissAlert(int timeoutSeconds = 10)
+    {
+        var alert = FindVisible(By.CssSelector("ion-alert"), timeoutSeconds);
+        if (alert == null) return null;
+
+        string Text(string css) => string.Join(" ", alert.FindElements(By.CssSelector(css)).Select(e => e.Text.Trim()).Where(t => t.Length > 0));
+        var buttons = alert.FindElements(By.CssSelector("button.alert-button")).Where(b => b.Displayed).ToList();
+        var dismiss = buttons.FirstOrDefault(b => (b.GetAttribute("class") ?? "").Contains("alert-button-role-cancel"))
+                      ?? buttons.LastOrDefault();
+        var captured = new DriverAlert(Text(".alert-head"), Text(".alert-message"),
+            buttons.Select(b => b.Text.Trim()).ToList(), dismiss?.Text.Trim() ?? string.Empty);
+        Console.WriteLine($"🔔 Driver app alert: '{captured.Header}' - '{captured.Message}' [{string.Join(", ", captured.Buttons)}], closing with '{captured.ClickedButton}'.");
+
+        try
+        {
+            dismiss?.Click();
+        }
+        catch (Exception ex) when (ex is ElementClickInterceptedException or ElementNotInteractableException)
+        {
+            ((IJavaScriptExecutor)Driver).ExecuteScript("arguments[0].click();", dismiss);
+        }
+        return captured;
     }
 
     // Screenshot of the current load's QR code, for the Flex disposal scanner to read
