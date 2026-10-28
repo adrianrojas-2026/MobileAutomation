@@ -237,15 +237,34 @@ public static class DriverFactory
 
         var appiumSection = config.GetSection("Appium");
         string serverUrl = appiumSection["ServerUrl"]!;
+        _appiumServerUrl = serverUrl;
 
         if (!config.GetSection($"MobileConfigurations:{environmentFlex}").Exists()) throw new ArgumentException("Invalid environment specified for Flex app.");
         if (!config.GetSection($"MobileConfigurations:{environmentDriver}").Exists()) throw new ArgumentException("Invalid environment specified for Driver app.");
-                
+
+        // Held until Quit(), so no other test opens sessions on this node pair meanwhile
+        AcquireNodePair(environmentFlex);
+
         // 1. INITIALIZE RECOVERY TRAC FLEX
 
         var envFlexSection = config.GetSection($"MobileConfigurations:{environmentFlex}");
-        var optionsFlex = ConfigureOptions(appiumSection, envFlexSection, "flex");
-        _driverFlex.Value = new AndroidDriver(new Uri(serverUrl), optionsFlex);
+        var envDriverSection = config.GetSection($"MobileConfigurations:{environmentDriver}");
+        try
+        {
+            // Fail in seconds on a frozen emulator, rather than letting each Appium command wait out its adb timeout
+            EnsureResponsive(envFlexSection, environmentFlex);
+            EnsureResponsive(envDriverSection, environmentDriver);
+
+            // The pair lock is held, so a chromedriver still on this node's port belongs to no live session
+            KillStaleChromedriver(envFlexSection);
+            var optionsFlex = ConfigureOptions(appiumSection, envFlexSection, "flex");
+            _driverFlex.Value = new AndroidDriver(new Uri(serverUrl), optionsFlex);
+        }
+        catch
+        {
+            ReleaseNodePair();
+            throw;
+        }
 
         // Debug APKs call the local Aspire services on the emulator's own "localhost"; the reverse forwards don't
         // survive across sessions, so (re)apply them once the session is up
@@ -254,16 +273,59 @@ public static class DriverFactory
         AdbHelper.ReversePorts(envFlexSection["Udid"], aspirePorts);
 
         // 2. INITIALIZE RECOVERY TRAC DRIVER
-        var envDriverSection = config.GetSection($"MobileConfigurations:{environmentDriver}");
         var optionsDriver = ConfigureOptions(appiumSection, envDriverSection, "driver");
         _driverDriverLauncher.Value = () =>
         {
+            KillStaleChromedriver(envDriverSection);
             var driverApp = new AndroidDriver(new Uri(serverUrl), optionsDriver);
             AdbHelper.ReversePorts(envDriverSection["Udid"], aspirePorts);
             return driverApp;
         };
 
         _environment.Value = $"{environmentFlex} + {environmentDriver}";
+    }
+
+    // One test at a time per node pair: a new Appium session on an emulator ends the one already running there, and
+    // NUnit can still schedule two fixtures on the same pair together (e.g. a NonParallelizable fixture next to one
+    // with ParallelScope.Children)
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _nodePairLocks = new();
+    private static readonly ThreadLocal<SemaphoreSlim?> _heldNodePairLock = new();
+
+    private static void AcquireNodePair(string environmentFlex)
+    {
+        var pairLock = _nodePairLocks.GetOrAdd(environmentFlex, _ => new SemaphoreSlim(1, 1));
+        if (!pairLock.Wait(0))
+        {
+            Console.WriteLine($"⏳ {environmentFlex} is in use by another test. Waiting for it to finish...");
+            if (!pairLock.Wait(TimeSpan.FromMinutes(60)))
+                throw new TimeoutException($"{environmentFlex} stayed in use by another test for 60 minutes.");
+        }
+        _heldNodePairLock.Value = pairLock;
+    }
+
+    private static void ReleaseNodePair()
+    {
+        _heldNodePairLock.Value?.Release();
+        _heldNodePairLock.Value = null;
+    }
+
+    private static void EnsureResponsive(IConfigurationSection envSection, string environment)
+    {
+        string? udid = envSection["Udid"];
+        if (string.IsNullOrWhiteSpace(udid) || AdbHelper.IsResponsive(udid)) return;
+
+        throw new InvalidOperationException(
+            $"{environment} ({udid}) is not responding to adb. Restart it (e.g. 'adb -s {udid} emu kill', then Setup\\Start-MobileGrid.ps1) and run the test again.");
+    }
+
+    private static string? _appiumServerUrl;
+
+    private static void KillStaleChromedriver(IConfigurationSection envSection)
+    {
+        if (int.TryParse(envSection["ChromedriverPort"], out int port))
+        {
+            ChromedriverCleanup.KillOnPort(_appiumServerUrl, port);
+        }
     }
 
     // Parallel nodes need their own Flex account, or each one sees the other's submitted tickets
@@ -384,13 +446,30 @@ public static class DriverFactory
                     ?? androidDriver.Contexts.Last(); // Fallback to last initialized container
                 
                 Console.WriteLine($"📱 Mobile Mode: Switching context from NATIVE_APP to => {webviewContext}");
-                androidDriver.Context = webviewContext;
+                try
+                {
+                    androidDriver.Context = webviewContext;
+                }
+                // A chromedriver orphaned by an earlier session still holds the port and the device: clear it and retry once
+                catch (WebDriverException ex) when (ex.Message.Contains("already in use", StringComparison.OrdinalIgnoreCase)
+                                                    && KillSessionChromedriver(androidDriver))
+                {
+                    androidDriver.Context = webviewContext;
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Warning: Context switch to WEBVIEW failed: {ex.Message}. Remaining in native context.");
             }
         }
+    }
+
+    private static bool KillSessionChromedriver(AndroidDriver androidDriver)
+    {
+        object? port = androidDriver.Capabilities.GetCapability("chromedriverPort")
+                       ?? androidDriver.Capabilities.GetCapability("appium:chromedriverPort");
+        return int.TryParse(port?.ToString(), out int chromedriverPort)
+               && ChromedriverCleanup.KillOnPort(_appiumServerUrl, chromedriverPort);
     }
 
     public static void Quit()
@@ -437,6 +516,9 @@ public static class DriverFactory
             catch { /* Best effort cleanup */ }
             feed.Value = null;
         }
+
+        // 5. Sessions are closed: the next test may use this node pair
+        ReleaseNodePair();
 
     }
 }
