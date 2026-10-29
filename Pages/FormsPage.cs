@@ -109,6 +109,15 @@ public class FormsPage : BasePage
             jsClickWhenIntercepted: true);
     }
 
+    // Bluetooth icon next to the QR icon on a submitted card (BLE builds); opens the Send via Bluetooth picker
+    public void OpenSubmittedCardBluetooth(string ticketId)
+    {
+        ScrollAndClick(By.XPath(
+            $"//app-form-summary//ion-card[.//ion-card-subtitle[normalize-space()='{ticketId}']]" +
+            "//ion-icon[@name='bluetooth-outline']"),
+            jsClickWhenIntercepted: true);
+    }
+
     // Sync runs in the background after submit; wait until the card shows the "Synced" status
     public bool WaitUntilSynced(string ticketId, int timeoutSeconds = 90)
     {

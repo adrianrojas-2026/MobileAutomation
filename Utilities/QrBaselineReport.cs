@@ -40,7 +40,10 @@ public static class QrBaselineReport
         ["QR-B07"] = new("Damaged ticket payload handling", "FR-5, Check 3", "TC-15, TC-16"),
         ["QR-B08"] = new("QR reopens from the submitted card with the same payload", "FR-7", "TC-19, TC-22"),
         ["QR-B09"] = new("QR handoff with both devices in airplane mode", "Demo env", "TC-29"),
-        ["QR-B10"] = new("Device Bluetooth readiness", "Risk: BLE support", "Lanes E / D")
+        ["QR-B10"] = new("Device Bluetooth readiness", "Risk: BLE support", "Lanes E / D"),
+        // Part B: the BLE handoff itself; the last column names the QR baseline it is compared with
+        ["TC-12"] = new("BLE happy path: ticket sent via Bluetooth becomes the Driver's current load", "FR-6, Check 2", "QR-B02"),
+        ["TC-13"] = new("BLE payload parity: received load carries the ticket's QR payload unchanged", "FR-4, FR-6", "QR-B01")
     };
 
     private static readonly ConcurrentQueue<BaselineTestResult> Results = new();
@@ -88,13 +91,15 @@ public static class QrBaselineReport
             DateTime.Now));
     }
 
-    // QR_B01_B08_... -> QR-B01, QR-B08; the original QR E2E is QR-A01
+    // QR_B01_B08_... -> QR-B01, QR-B08; BLE_TC12_TC13_... -> TC-12, TC-13; the original QR E2E is QR-A01
     private static IReadOnlyList<string> ScenarioIdsOf(string methodName)
     {
         if (methodName.StartsWith("Test_LoadDisposalCollectionFlow", StringComparison.Ordinal)) return ["QR-A01"];
-        var match = Regex.Match(methodName, @"^QR_((?:[AB]\d{2}_)+)");
-        return match.Success
-            ? match.Groups[1].Value.Split('_', StringSplitOptions.RemoveEmptyEntries).Select(id => $"QR-{id}").ToList()
+        var qr = Regex.Match(methodName, @"^QR_((?:[AB]\d{2}_)+)");
+        if (qr.Success) return qr.Groups[1].Value.Split('_', StringSplitOptions.RemoveEmptyEntries).Select(id => $"QR-{id}").ToList();
+        var ble = Regex.Match(methodName, @"^BLE_((?:TC\d{2}_)+)");
+        return ble.Success
+            ? ble.Groups[1].Value.Split('_', StringSplitOptions.RemoveEmptyEntries).Select(id => $"TC-{id[2..]}").ToList()
             : [];
     }
 

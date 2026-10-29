@@ -78,6 +78,8 @@ public class CollectionLoadTicketFormPage : BasePage
     private By GenerateQrAlert => By.XPath("//ion-alert[.//h2[normalize-space()='Generate QR Code']]");
     private By GenerateQrProceedButton => By.XPath(
         "//ion-alert[.//h2[normalize-space()='Generate QR Code']]//button[.//span[normalize-space()='Proceed']]");
+    private By GenerateQrCancelButton => By.XPath(
+        "//ion-alert[.//h2[normalize-space()='Generate QR Code']]//button[.//span[normalize-space()='Cancel']]");
     private By QrCodeImage => By.XPath("//app-qr-code-modal//ngx-qrcode//img");
     private By QrModalCloseButton => By.XPath("//app-qr-code-modal//span[contains(@class,'close_icon')]");
 
@@ -626,6 +628,26 @@ public class CollectionLoadTicketFormPage : BasePage
     {
         Find(GenerateQrAlert);
         ScrollAndClick(GenerateQrProceedButton);
+    }
+
+    // The Bluetooth handoff sends the ticket from its submitted card instead: Cancel the post-submit QR prompt. With
+    // "Don't show this again" ticked earlier the app skips the prompt and opens the QR right away, so close that
+    public void DeclineQrGeneration()
+    {
+        if (FindVisible(GenerateQrAlert, 15) != null)
+        {
+            ScrollAndClick(GenerateQrCancelButton);
+            var closedWait = new WebDriverWait(Driver, TimeSpan.FromSeconds(10));
+            closedWait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+            closedWait.Until(d => !d.FindElements(GenerateQrAlert).Any(e => e.Displayed));
+            return;
+        }
+
+        if (FindVisible(QrCodeImage, 5) != null)
+        {
+            Console.WriteLine("ℹ️ Flex opened the QR right after submit (QR prompt turned off on this device). Closing it.");
+            CloseQrModal();
+        }
     }
 
     // The QR is rendered as a base64 PNG data URL, so the exact image can be stored without a screenshot

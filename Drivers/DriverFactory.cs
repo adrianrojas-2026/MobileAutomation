@@ -153,8 +153,9 @@ public static class DriverFactory
     }
     
     // node: "Node1", "Node2"... runs on that Grid_<node>_Flex / Grid_<node>_Driver pair and logs in with its
-    // TestSettings:<node>:LoginEmail account when one is set; null leases the next free pair from the pool
-    public static void InitializeDualApps(string? node = null)
+    // TestSettings:<node>:LoginEmail account when one is set; null leases the next free pair from the pool.
+    // account: log in as the configured account whose LoginEmail is <...>.<account>@... (e.g. "testuser1") instead
+    public static void InitializeDualApps(string? node = null, string? account = null)
     {
         IConfiguration config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
@@ -166,7 +167,14 @@ public static class DriverFactory
         string webUrl = config["TestSettings:WebBaseUrl"] ?? "http://localhost:8100";
         string driverWebUrl = config["TestSettings:DriverWebBaseUrl"] ?? "http://localhost:8200";
 
-        SetLoginCredentials(config, node);
+        if (account != null)
+        {
+            UseAccount(config, FindAccountPrefix(config, account));
+        }
+        else
+        {
+            SetLoginCredentials(config, node);
+        }
 
         // =========================================================================
         // SCENARIO 1: DEV MODE ON LOCALHOST (Launches web browsers directly)
@@ -344,12 +352,30 @@ public static class DriverFactory
                 $"and 'dotnet user-secrets set TestSettings:{node}:LoginPassword <value>'.");
         }
 
-        string prefix = hasOwnAccount ? $"TestSettings:{node}" : "TestSettings";
+        UseAccount(config, hasOwnAccount ? $"TestSettings:{node}" : "TestSettings");
+    }
 
+    // prefix: the settings section holding LoginEmail / LoginPassword
+    private static void UseAccount(IConfiguration config, string prefix)
+    {
         _loginEmail.Value = config[$"{prefix}:LoginEmail"]
             ?? throw new InvalidOperationException($"LoginEmail setting is missing. Set it with 'dotnet user-secrets set {prefix}:LoginEmail <value>'.");
         _loginPassword.Value = config[$"{prefix}:LoginPassword"]
             ?? throw new InvalidOperationException($"LoginPassword setting is missing. Set it with 'dotnet user-secrets set {prefix}:LoginPassword <value>'.");
+    }
+
+    // The settings section (TestSettings or TestSettings:<name>) holding the account whose email's local part ends
+    // with the given name, e.g. "testuser1" -> Flex.testuser1@tetratech.com
+    private static string FindAccountPrefix(IConfiguration config, string account)
+    {
+        var testSettings = config.GetSection("TestSettings");
+        var candidates = new[] { testSettings }.Concat(testSettings.GetChildren());
+        var match = candidates.FirstOrDefault(section =>
+            section["LoginEmail"]?.Split('@')[0].EndsWith(account, StringComparison.OrdinalIgnoreCase) == true);
+
+        return match?.Path ?? throw new InvalidOperationException(
+            $"No configured Flex account matches '{account}'. Add it with 'dotnet user-secrets set TestSettings:<name>:LoginEmail <value>' " +
+            "and 'dotnet user-secrets set TestSettings:<name>:LoginPassword <value>'.");
     }
     // Opens the RecoveryTrac Driver app: Edge on localhost in Web mode, the paired emulator in Mobile mode
     public static IWebDriver StartDriverApp()
