@@ -12,11 +12,12 @@ namespace RecoveryTrac.AutomatedTests
     // app over Bluetooth instead of a QR scan. Same Flex flow as the QR tests up to Submit; then the monitor sends the
     // ticket from its submitted card and the driver receives it. Ends once the Driver app holds the load, as the
     // disposal side of the BLE handoff is still in development.
-    // The node pairs run in parallel, each logged in with its own Flex account so neither sees the other's tickets.
+    // The node pairs run in parallel, each logged in with its own Flex account so neither sees the other's tickets
+    // (nor Node1's QR E2E, which uses testuser1).
     // All emulators share one simulated Bluetooth, so each Flex also lists the other node's Driver app; it picks its
     // own by the truck code that Driver app shows.
     [TestFixture("Node2", "testuser2")]
-    [TestFixture("Node3", "testuser1")]
+    [TestFixture("Node3", "testuser4")]
     [Category("BLE")]
     [Parallelizable(ParallelScope.Self)]
     public class BleTicketHandoffTests : DualAppTestBase
