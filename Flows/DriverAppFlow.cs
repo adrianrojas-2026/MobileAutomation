@@ -17,6 +17,14 @@ public static class DriverAppFlow
         var driverApp = DriverFactory.StartDriverApp();
         if (driverApp is AndroidDriver androidDriverApp)
         {
+            // On the first session after an emulator boot Appium's 'am start' can hang and leave the launcher in
+            // front, so bring the app up when it isn't
+            string package = androidDriverApp.Capabilities.GetCapability("appPackage") as string ?? "com.tetratech.recoverytracdriver";
+            if (androidDriverApp.CurrentPackage != package)
+            {
+                Console.WriteLine($"🚚 Driver app not in front after the session started ({androidDriverApp.CurrentPackage}). Launching {package}...");
+                androidDriverApp.ActivateApp(package);
+            }
             PermissionHelper.HandleSystemPermissions(androidDriverApp);
         }
 
