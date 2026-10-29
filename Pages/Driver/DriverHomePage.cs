@@ -113,13 +113,34 @@ public class DriverHomePage : BasePage
         }
     }
 
-    // Message of the toast on screen, e.g. "Load DG0T-LC-100H received." (Ionic renders it in the toast's shadow DOM)
+    // Toasts last a couple of seconds and can be gone before the test gets to read them (it happened with two node
+    // pairs running in parallel), so record each one as Ionic adds it. Call before the action that raises the toast
+    public void StartRecordingToasts()
+    {
+        const string script =
+            "if (!window.__rtToasts) {" +
+            "  window.__rtToasts = [];" +
+            "  const rec = t => {" +
+            "    const m = (t.message || t.shadowRoot?.querySelector('.toast-message')?.textContent || '').toString().trim();" +
+            "    if (m && !window.__rtToasts.includes(m)) window.__rtToasts.push(m);" +
+            "  };" +
+            "  new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => {" +
+            "    if (n.tagName === 'ION-TOAST') { rec(n); n.addEventListener('ionToastDidPresent', () => rec(n)); }" +
+            "  }))).observe(document.body, { childList: true, subtree: true });" +
+            "}" +
+            "window.__rtToasts.length = 0;";
+        ((IJavaScriptExecutor)Driver).ExecuteScript(script);
+    }
+
+    // Message of the toast on screen, e.g. "Load DG0T-LC-100H received." (Ionic renders it in the toast's shadow DOM),
+    // or the last one recorded since StartRecordingToasts when it has already closed
     public string? ToastMessage(int timeoutSeconds = 10)
     {
         const string script =
             "const t = [...document.querySelectorAll('ion-toast')].pop();" +
             "const m = t && t.shadowRoot && t.shadowRoot.querySelector('.toast-message');" +
-            "return m ? m.textContent.trim() : (t ? (t.message || '').toString() : null);";
+            "const shown = m ? m.textContent.trim() : (t ? (t.message || '').toString() : '');" +
+            "return shown || (window.__rtToasts || []).slice(-1)[0] || null;";
         var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds));
         try
         {

@@ -102,6 +102,7 @@ namespace RecoveryTrac.AutomatedTests
             // STEP 22 (BLE): Flex lists the Driver app by its truck code; send the ticket to it
             // -------------------------------------------------------------------------
             picker.WaitForTruck(truckCode);
+            driverHome.StartRecordingToasts();
             var sendTimer = Stopwatch.StartNew();
             picker.SelectTruck(truckCode);
             string sendResult = picker.WaitForSendResult();
