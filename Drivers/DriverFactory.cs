@@ -322,7 +322,15 @@ public static class DriverFactory
     private static void EnsureResponsive(IConfigurationSection envSection, string environment)
     {
         string? udid = envSection["Udid"];
-        if (string.IsNullOrWhiteSpace(udid) || AdbHelper.IsResponsive(udid)) return;
+        if (string.IsNullOrWhiteSpace(udid)) return;
+
+        // A busy emulator (e.g. while other nodes run in parallel) can miss one probe and answer the next, so only a
+        // device that misses all of them is reported
+        for (int attempt = 1; attempt <= 3; attempt++)
+        {
+            if (AdbHelper.IsResponsive(udid, timeoutSeconds: 10 * attempt)) return;
+            Console.WriteLine($"⚠️ {environment} ({udid}) did not answer adb (attempt {attempt} of 3).");
+        }
 
         throw new InvalidOperationException(
             $"{environment} ({udid}) is not responding to adb. Restart it (e.g. 'adb -s {udid} emu kill', then Setup\\Start-MobileGrid.ps1) and run the test again.");
