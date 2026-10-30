@@ -35,26 +35,54 @@ public class BleTruckPickerPage : BasePage
     // can end before the Driver app advertises, or fail while the Nearby devices permission was still being asked
     public void WaitForTruck(string truckCode, int searches = 3)
     {
+        if (FindTruck(code => code == truckCode, truckCode, searches) != null) return;
+
+        throw new WebDriverTimeoutException(
+            $"Flex did not find the Driver app '{truckCode}' after {searches} Bluetooth searches (listed: [{string.Join(", ", ListedTrucks())}]).");
+    }
+
+    // The first listed truck code that matches, searching again (Rescan) whenever a search ends without one; null
+    // after the given number of searches. 'wanted' only describes the match in the log
+    public string? FindTruck(Func<string, bool> match, string wanted, int searches = 2)
+    {
         for (int search = 1; search <= searches; search++)
         {
             var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(25));
             wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+            // WebDriverWait only accepts reference results, so an ended search without a match returns ""
             string outcome = wait.Until(d =>
             {
-                if (d.FindElements(TruckRow(truckCode)).Any(e => e.Displayed)) return "found";
+                string? found = ListedTrucks().FirstOrDefault(match);
+                if (found != null) return found;
                 bool searching = d.FindElements(Searching).Any(e => e.Displayed);
-                return searching ? null : "ended";
+                return searching ? null : string.Empty;
             });
-            if (outcome == "found") return;
+            if (outcome.Length > 0) return outcome;
 
             string message = Driver.FindElements(ScanMessage).FirstOrDefault(e => e.Displayed)?.Text.Trim() ?? string.Empty;
-            Console.WriteLine($"📡 Search {search} ended without {truckCode} (listed: [{string.Join(", ", ListedTrucks())}]" +
+            Console.WriteLine($"📡 Search {search} ended without {wanted} (listed: [{string.Join(", ", ListedTrucks())}]" +
                               $"{(message.Length > 0 ? $", message: '{message}'" : string.Empty)}).");
-            if (search < searches) ScrollAndClick(RescanButton, jsClickWhenIntercepted: true);
+            if (search < searches) Rescan();
         }
+        return null;
+    }
 
-        throw new WebDriverTimeoutException(
-            $"Flex did not find the Driver app '{truckCode}' after {searches} Bluetooth searches (listed: [{string.Join(", ", ListedTrucks())}]).");
+    // Waits for the current search to end and returns the truck codes it listed
+    public IReadOnlyList<string> WaitForSearchToEnd(int timeoutSeconds = 30)
+    {
+        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds));
+        wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        wait.Until(d => !d.FindElements(Searching).Any(e => e.Displayed));
+        return ListedTrucks();
+    }
+
+    // Clears the list and searches again; Rescan stays disabled while a search or a send is running
+    public void Rescan()
+    {
+        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(30));
+        wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        wait.Until(d => d.FindElements(RescanButton).Any(b => b.Displayed && b.GetAttribute("disabled") is null or "false"));
+        ScrollAndClick(RescanButton, jsClickWhenIntercepted: true);
     }
 
     public void SelectTruck(string truckCode) => ScrollAndClick(TruckRow(truckCode), jsClickWhenIntercepted: true);

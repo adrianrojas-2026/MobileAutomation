@@ -14,20 +14,7 @@ public static class DriverAppFlow
     // -------------------------------------------------------------------------
     public static (IWebDriver App, DriverHomePage Home) StartOnHome()
     {
-        var driverApp = DriverFactory.StartDriverApp();
-        if (driverApp is AndroidDriver androidDriverApp)
-        {
-            // On the first session after an emulator boot Appium's 'am start' can hang and leave the launcher in
-            // front, so bring the app up when it isn't
-            string package = androidDriverApp.Capabilities.GetCapability("appPackage") as string ?? "com.tetratech.recoverytracdriver";
-            if (androidDriverApp.CurrentPackage != package)
-            {
-                Console.WriteLine($"🚚 Driver app not in front after the session started ({androidDriverApp.CurrentPackage}). Launching {package}...");
-                androidDriverApp.ActivateApp(package);
-            }
-            PermissionHelper.HandleSystemPermissions(androidDriverApp);
-        }
-
+        var driverApp = Launch();
         var driverOnboarding = new DriverOnboardingPage(driverApp);
         driverOnboarding.CompleteOnboardingIfPresent();
 
@@ -38,6 +25,35 @@ public static class DriverAppFlow
         EnterWebView(driverApp);
         return (driverApp, new DriverHomePage(driverApp));
     }
+
+    // Starts the Driver app and leaves it on the Welcome screen (a cold start opens there, before GET STARTED).
+    // Returns the app, or null when it opened somewhere else
+    public static IWebDriver? StartOnWelcome()
+    {
+        var driverApp = Launch();
+        return new DriverOnboardingPage(driverApp).IsWelcomeScreenDisplayed(60) ? driverApp : null;
+    }
+
+    private static IWebDriver Launch()
+    {
+        var driverApp = DriverFactory.StartDriverApp();
+        if (driverApp is AndroidDriver androidDriverApp)
+        {
+            // On the first session after an emulator boot Appium's 'am start' can hang and leave the launcher in
+            // front, so bring the app up when it isn't
+            string package = DriverPackage(androidDriverApp);
+            if (androidDriverApp.CurrentPackage != package)
+            {
+                Console.WriteLine($"🚚 Driver app not in front after the session started ({androidDriverApp.CurrentPackage}). Launching {package}...");
+                androidDriverApp.ActivateApp(package);
+            }
+            PermissionHelper.HandleSystemPermissions(androidDriverApp);
+        }
+        return driverApp;
+    }
+
+    public static string DriverPackage(AndroidDriver driverApp) =>
+        driverApp.Capabilities.GetCapability("appPackage") as string ?? "com.tetratech.recoverytracdriver";
 
     // SwitchToWebViewContext only logs a failed switch (e.g. an adb timeout on a busy emulator), so retry it and
     // fail here rather than at the first DOM step

@@ -188,3 +188,28 @@ Every FR and check has at least one scenario.
 2. **Now, small code changes**: G1/G2 + S10 + S7 → QR-B04…B07, QR-B09. These lock in the expected results for checks 3 and 4 before BLE arrives.
 3. **When the dev team shares locators (Q1)**: write `DriverBleReceivePage` / `FlexBleSendPage` and the B.1/B.2 scenarios against the first BLE build.
 4. **BLE build + fault injection (Q2)**: B.3/B.4. Then the physical-phone run for checks 1, 2, 6 and TC-29.
+
+---
+
+## Part C - Feature #10082 R1-C1 (Foundation & BLE spike)
+
+From *BT - Requirements Plan - feature-10082*, priority group **R1-C1**. Automated in `Tests/NearbyDiscoverabilityTests.cs` (category `BLE-R1-C1`). The tests check the **R1 requirement**, not the POC, so they fail until R1 lands. Each failure names the requirement ID.
+
+| Requirement | What it asks | Test | Status on the POC (2026-10-30) |
+|---|---|---|---|
+| R1-INFRA-SPIKE | BLE / Nearby transport spike, go/no-go Nov 3 | No test: it is a decision. Evidence: QR-B10 (`DeviceBluetoothReadinessTests`) and TC-12/13 (Android-to-Android BLE with the Driver App as peripheral) | ✅ evidence available |
+| R1-INFRA-FLAG | One flag gates every #10082 entry point. Flag off leaves the QR flows identical | Blocked: neither app has a #10082 flag yet (only `driverSession` and Flex's dev-only `bleHandoffDevTools`, both build-time). Once it exists: flag-off build shows no Bluetooth icon in Flex and no *Receive via Bluetooth* in the Driver App, plus `QrBaselineTests` on that build | ⛔ blocked |
+| 10082-NDT-1-P01, N02 | Discoverable whenever open in the foreground, with no receive mode | `NDT1_P01_N02_DriverOnHome_IsDiscoverable_WithoutReceiveMode` | ❌ not listed (POC needs *Receive via Bluetooth*) |
+| 10082-NDT-1-P02, N01 | Discoverable on any page, without going to Home first | `NDT1_P02_N01_DriverOnAnotherPage_IsDiscoverable` (Receipts tab) | ❌ not listed |
+| 10082-NDT-1-N01 | Not even Home needs to have been reached | `NDT1_N01_DriverBeforeHome_IsDiscoverable` (Welcome screen) | ❌ not listed |
+| 10082-NDT-1-P03 | Discoverable again after returning from the background, with nothing re-enabled | `NDT1_P03_DriverBackFromBackground_IsDiscoverableAgain`. Whether it is listed while in the background is only recorded (`Baselines/NDT-1-P03_*.json`) | ❌ fails at its P01 precondition |
+| (control) | Proves the search below can find an advertising Driver App | `NDT1_Control_DriverInReceiveMode_IsFoundByDifference` | ✅ found in 1.1 s |
+
+**How a test finds its own Driver App.** Without receive mode the Driver App shows no code to look for, so each test works by difference:
+1. It stops the Driver App on every grid Driver emulator, since all emulators share one simulated Bluetooth.
+2. It opens Flex's *Send via Bluetooth* picker on any submitted *Load - Collection* ticket and notes what one search lists.
+3. It starts this node's Driver App in the state under test and searches again (Rescan, 2 searches). A new entry is this node's Driver App.
+
+The fixture is `NonParallelizable` and runs on Node 2 (`testuser2`).
+
+**When R1 lands:** the picker becomes the standard Flex Action Menu (FEAT-NDT-2), so `BleTruckPickerPage`'s locators will need updating. The test logic stays the same.

@@ -77,6 +77,35 @@ Each run saves its measurements to `bin/Debug/net10.0/Baselines/BLE-TC12_<node>_
 
 **Shared Bluetooth:** all emulators share one simulated Bluetooth, so each Flex also lists the other node's Driver App. That's why each Flex picks its own Driver App by truck code rather than taking the first one listed.
 
+## Feature #10082 R1-C1: Driver App Nearby discoverability (FEAT-NDT-1)
+
+`Tests/NearbyDiscoverabilityTests.cs` (category `BLE-R1-C1`) checks the R1 requirements from the #10082 requirements plan. Unlike TC-12/13, these tests check the **requirement, not the POC**. They fail until R1 is built, and each failure names its requirement ID, so a run doubles as the gap report.
+
+| Test | Requirement | Driver App state | POC today |
+|---|---|---|---|
+| `NDT1_P01_N02_DriverOnHome_IsDiscoverable_WithoutReceiveMode` | 10082-NDT-1-P01, N02 | Open on Home, *Receive via Bluetooth* never tapped | ❌ |
+| `NDT1_P02_N01_DriverOnAnotherPage_IsDiscoverable` | 10082-NDT-1-P02, N01 | Open on the Receipts tab | ❌ |
+| `NDT1_N01_DriverBeforeHome_IsDiscoverable` | 10082-NDT-1-N01 | Open on Welcome, before GET STARTED | ❌ |
+| `NDT1_P03_DriverBackFromBackground_IsDiscoverableAgain` | 10082-NDT-1-P03 | Listed, then sent to the background, then brought back with nothing tapped | ❌ (fails at the P01 precondition) |
+| `NDT1_Control_DriverInReceiveMode_IsFoundByDifference` | Control | In the POC's receive mode | ✅ |
+
+Pass means Flex's *Send via Bluetooth* picker lists the Driver App within two searches (about 30 s).
+
+**How a test finds its own Driver App.** Without receive mode the Driver App shows no code to match:
+1. The test stops the Driver App on **every** grid Driver emulator, because all emulators share one simulated Bluetooth.
+2. It opens the picker on any submitted *Load - Collection* ticket, submitting one only if the account has none, and notes what one search lists.
+3. It starts this node's Driver App and searches again. The new entry is this node's Driver App.
+
+The **control** test runs the same search with the Driver App in receive mode. While it passes, a failing NDT-1 test means the Driver App wasn't advertising; the search itself works.
+
+The fixture runs on Node 2 (`testuser2`) and is `NonParallelizable`. Don't run it next to the BLE handoff tests: it stops their Driver Apps.
+
+**Not automated in R1-C1:**
+- R1-INFRA-SPIKE is a go/no-go decision. QR-B10 (`DeviceBluetoothReadinessTests`) and TC-12/13 are its evidence.
+- R1-INFRA-FLAG is blocked: neither app has a #10082 flag yet.
+
+Details are in Part C of `docs/testing/test-scenarios-ble-ticket-handoff.md`.
+
 ## Project layout
 
 | Path | Contents |
@@ -313,6 +342,12 @@ A run takes about **4 minutes** per node. On a pass, the console shows the truck
 🚚 Driver app: current load 9T4F-LC-1007 after 3.4 s (toast: 'Load 9T4F-LC-1007 received.').
 ```
 
+**#10082 R1-C1 discoverability (NDT-1)** needs only Node 2 (`.\Setup\Start-MobileGrid.ps1 -Nodes 2`). Run it on its own, about **2–3 minutes per test**:
+
+```powershell
+dotnet test --filter "Category=BLE-R1-C1" --logger "console;verbosity=normal"
+```
+
 A run whose load took longer than 5 s ends with a **warning** outcome. The `dotnet test` summary doesn't count that as passed, but all of its checks held. The recorded JSON shows its numbers.
 
 All nodes pick the **first truck**. If the backend ever allows only one active load per truck, every node but the first will fail at the Driver scan step.
@@ -383,4 +418,5 @@ All nodes pick the **first truck**. If the backend ever allows only one active l
 | `No configured Flex account matches 'testuser4'` | A BLE fixture names an account that isn't in user-secrets. Set it under any `TestSettings:<name>:LoginEmail` / `LoginPassword` |
 | BLE: *Flex did not find the Driver app 'RTD-XXXX' after 3 Bluetooth searches* | The Driver App stopped advertising (it advertises for 2 minutes after Receive via Bluetooth), or the emulator's Bluetooth is off. The message lists the truck codes Flex did find |
 | BLE: `sendResult` is *"Waiting for confirmation…"* or a failure message | Flex sent the ticket but the Driver App didn't confirm it. Check that the Driver emulator is responsive and run again |
+| `10082-NDT-1-… not met` | Expected until R1: the Driver App doesn't advertise without *Receive via Bluetooth*. If `NDT1_Control_…` also fails, the search itself is broken (check that the Flex picker opens and that the Driver emulator's Bluetooth is on) |
 | BLE: a fixture shows neither *Passed* nor *Failed* | The run passed every check but took over 5 s, so it ended with a warning. See `Baselines/BLE-TC12_<node>_*.json` |

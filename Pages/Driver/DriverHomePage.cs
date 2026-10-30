@@ -90,6 +90,18 @@ public class DriverHomePage : BasePage
     // monitor to pick in Flex. Offered next to Scan QR Code, and under Cancel Load when a load is active
     public void ReceiveViaBluetooth() => ClickVisible(ButtonByText("RECEIVE VIA BLUETOOTH"), "Receive via Bluetooth");
 
+    // Whether the POC's receive panel (Receive via Bluetooth) is showing, i.e. the driver put the app in receive mode
+    public bool IsReceiving => Driver.FindElements(By.CssSelector("app-home .receive-panel")).Any(e => e.Displayed);
+
+    // Bottom tab bar of the main layout: "home" or "receipts". Ionic doesn't reflect the tab name as an attribute, but
+    // puts it in the button's id
+    public void OpenTab(string tab)
+    {
+        ClickVisible(By.Id($"tab-button-{tab}"), tab);
+        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(15));
+        wait.Until(d => new Uri(d.Url).AbsolutePath.TrimStart('/').StartsWith(tab, StringComparison.OrdinalIgnoreCase));
+    }
+
     private By TruckCode => By.CssSelector("app-home .receive-panel__id");
     private By ReceiveStatus => By.CssSelector("app-home .receive-panel__status");
 
