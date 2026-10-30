@@ -15,11 +15,14 @@ public abstract class DualAppTestBase : BaseTest
     // By default each test case names its node as its first argument; fixtures pinned to one node override this
     protected virtual string NodeForCurrentTest => (string)TestContext.CurrentContext.Test.Arguments[0]!;
 
+    // null logs in with the node's own Flex account; fixtures that pick the account by name override this
+    protected virtual string? AccountForCurrentTest => null;
+
     [SetUp]
     public void SetupDualApps()
     {
         QrBaselineReport.StartTest();
-        DriverFactory.InitializeDualApps(NodeForCurrentTest);
+        DriverFactory.InitializeDualApps(NodeForCurrentTest, AccountForCurrentTest);
         int timeoutSeconds = int.Parse(TestConfiguration.Configuration["TestSettings:ExplicitWaitTimeoutSeconds"] ?? "15");
         _wait.Value = new WebDriverWait(DriverFactory.DriverFlex, TimeSpan.FromSeconds(timeoutSeconds));
 

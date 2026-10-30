@@ -86,6 +86,72 @@ public class DriverHomePage : BasePage
         ClickVisible(ScanQrCodeButton, "Scan QR Code");
     }
 
+    // BLE builds: advertises this phone for 2 minutes and shows its truck code ("Your truck code RTD-XXXX") for the
+    // monitor to pick in Flex. Offered next to Scan QR Code, and under Cancel Load when a load is active
+    public void ReceiveViaBluetooth() => ClickVisible(ButtonByText("RECEIVE VIA BLUETOOTH"), "Receive via Bluetooth");
+
+    private By TruckCode => By.CssSelector("app-home .receive-panel__id");
+    private By ReceiveStatus => By.CssSelector("app-home .receive-panel__status");
+
+    // The RTD-XXXX code once the phone advertises (after "Preparing Bluetooth…")
+    public string WaitForTruckCode(int timeoutSeconds = 30)
+    {
+        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds));
+        wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        try
+        {
+            return wait.Until(d =>
+            {
+                string? code = d.FindElements(TruckCode).FirstOrDefault(e => e.Displayed)?.Text.Trim();
+                return code is { Length: > 4 } && code.StartsWith("RTD-", StringComparison.Ordinal) ? code : null;
+            });
+        }
+        catch (WebDriverTimeoutException ex)
+        {
+            string status = Driver.FindElements(ReceiveStatus).FirstOrDefault(e => e.Displayed)?.Text.Trim() ?? "no receive panel";
+            throw new WebDriverTimeoutException($"The Driver app did not show its truck code after Receive via Bluetooth ({status}).", ex);
+        }
+    }
+
+    // Toasts last a couple of seconds and can be gone before the test gets to read them (it happened with two node
+    // pairs running in parallel), so record each one as Ionic adds it. Call before the action that raises the toast
+    public void StartRecordingToasts()
+    {
+        const string script =
+            "if (!window.__rtToasts) {" +
+            "  window.__rtToasts = [];" +
+            "  const rec = t => {" +
+            "    const m = (t.message || t.shadowRoot?.querySelector('.toast-message')?.textContent || '').toString().trim();" +
+            "    if (m && !window.__rtToasts.includes(m)) window.__rtToasts.push(m);" +
+            "  };" +
+            "  new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => {" +
+            "    if (n.tagName === 'ION-TOAST') { rec(n); n.addEventListener('ionToastDidPresent', () => rec(n)); }" +
+            "  }))).observe(document.body, { childList: true, subtree: true });" +
+            "}" +
+            "window.__rtToasts.length = 0;";
+        ((IJavaScriptExecutor)Driver).ExecuteScript(script);
+    }
+
+    // Message of the toast on screen, e.g. "Load DG0T-LC-100H received." (Ionic renders it in the toast's shadow DOM),
+    // or the last one recorded since StartRecordingToasts when it has already closed
+    public string? ToastMessage(int timeoutSeconds = 10)
+    {
+        const string script =
+            "const t = [...document.querySelectorAll('ion-toast')].pop();" +
+            "const m = t && t.shadowRoot && t.shadowRoot.querySelector('.toast-message');" +
+            "const shown = m ? m.textContent.trim() : (t ? (t.message || '').toString() : '');" +
+            "return shown || (window.__rtToasts || []).slice(-1)[0] || null;";
+        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds));
+        try
+        {
+            return wait.Until(d => ((IJavaScriptExecutor)d).ExecuteScript(script) as string is { Length: > 0 } text ? text : null);
+        }
+        catch (WebDriverTimeoutException)
+        {
+            return null;
+        }
+    }
+
     // With an active load the home button becomes Scan Receipt Code: scan the disposal ticket's QR to get the receipt
     public void ScanReceiptCode() => ClickVisible(ButtonByText("SCAN RECEIPT CODE"), "Scan Receipt Code");
 

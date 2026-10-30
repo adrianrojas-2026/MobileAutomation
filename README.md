@@ -41,13 +41,53 @@ Each test case runs these steps:
 
 Generated QR codes are saved under `bin/Debug/net10.0/QrCodes/` (named with the node, e.g. `CollectionLoadTicket_Node2_<timestamp>.png`) and attached to the test result.
 
+## BLE ticket handoff (TC-12 / TC-13)
+
+`Tests/BleTicketHandoffTests.cs` → `BLE_TC12_TC13_CollectionTicket_SentViaBluetooth_IsLoadedOnDriver` (category `BLE`). This is Part B of `docs/testing/test-scenarios-ble-ticket-handoff.md`. The collection ticket goes from Flex to the Driver App **over Bluetooth instead of a QR scan**. The test runs only in Mobile mode; in Web mode it is skipped.
+
+| Fixture | Node pair | Flex account |
+|---|---|---|
+| `BleTicketHandoffTests("Node2","testuser2")` | `Grid_Node2_Flex` (Android 15) + `Grid_Node2_Driver` (Android 13) | the configured account whose email is `…testuser2@…` |
+| `BleTicketHandoffTests("Node3","testuser4")` | `Grid_Node3_Flex` (Android 17) + `Grid_Node3_Driver` (Android 16) | the configured account whose email is `…testuser4@…` |
+
+The two fixtures run **in parallel** (`[Parallelizable(ParallelScope.Self)]`), each with its own Flex account. Neither sees the other's tickets, nor the tickets of Node 1's QR E2E, which uses `testuser1`. The account name is matched against the `LoginEmail` values in user-secrets (`TestSettings:LoginEmail` or any `TestSettings:<name>:LoginEmail`). Its section name doesn't matter, but the account must be set there.
+
+**What each run covers:**
+
+| Check | Covered by |
+|---|---|
+| **TC-12: happy path** | Flex sends a submitted *Load - Collection* ticket via Bluetooth. The Driver App shows it as its **Current Load**, with a *"Load <number> received."* toast |
+| **TC-12: Nearby devices permission** | The Flex permission is reset before the run, so Android must ask *"Allow Flex to find nearby devices?"* the first time Flex uses Bluetooth. The test taps **Allow** and checks the permission is granted |
+| **TC-12: truck code** | Flex lists the Driver App by the truck code that Driver App shows (`RTD-XXXX`). The status line must read **Sent to RTD-XXXX** |
+| **TC-12: timing (check 2)** | Time from picking the truck to the load showing on the Driver App. Over **5 s** gives a **warning**, not a failure: emulator timings are indicative only, and sign-off happens on the demo phones |
+| **TC-13: payload parity** | The Driver App's load QR decodes to exactly the same payload as the same ticket's QR in Flex. Both SHA-256 hashes are recorded |
+
+**Steps:**
+
+1. **Flex:** resets and relaunches Flex (Nearby devices permission revoked), logs in, then fills in and submits a *Load - Collection* ticket. Steps 1–17 use the same flow as the QR tests (`Flows/CollectionLoadTicketFlow.cs`).
+2. **Flex:** declines the QR prompt and finds the ticket under **Submitted**, then waits for it to reach Synced.
+3. **Driver App:** GET STARTED → SKIP and cancels any load left over from an earlier run. Then it taps **Receive via Bluetooth** (allowing Nearby devices if asked) and reads the truck code it advertises.
+4. **Flex:** taps the submitted card's **Bluetooth** icon, allows Nearby devices, and the *Send via Bluetooth* picker opens.
+5. **Flex:** waits for the truck code to be listed (pressing **Rescan** up to twice if a search ends without it), picks it, and waits for the final status.
+6. **Driver App:** waits for the Current Load and reads the toast and the load's QR. Back in Flex, the test opens the same ticket's QR as the reference payload.
+
+Each run saves its measurements to `bin/Debug/net10.0/Baselines/BLE-TC12_<node>_<timestamp>.json`: ticket, truck code, send result, `sentSeconds` / `loadedSeconds`, toast, payload length and both payload hashes.
+
+**Not covered yet:** the disposal side of the BLE handoff (still in development), so the test ends once the Driver App holds the load. The ×10 iteration run and the "≥ 9 of 10 under 5 s" sign-off from the test plan are also out of scope. Emulator timings are indicative only.
+
+**Shared Bluetooth:** all emulators share one simulated Bluetooth, so each Flex also lists the other node's Driver App. That's why each Flex picks its own Driver App by truck code rather than taking the first one listed.
+
 ## Project layout
 
 | Path | Contents |
 |---|---|
 | `Tests/` | Test fixtures (`BaseTest` handles teardown and the HTML report) |
 | `Pages/` | Flex page objects (`LoginPage`, `PrivacyPolicyPage`, `HomePage`, `FormsPage`, `CollectionLoadTicketFormPage`, `LoadDisposalFormPage`, ...) |
-| `Pages/Driver/` | Driver App page objects (`DriverOnboardingPage`, `DriverHomePage`, `DriverReceiptPage`) |
+| `Pages/BleTruckPickerPage.cs` | Flex *Send via Bluetooth* picker: lists Driver Apps by truck code, Rescan, final send status |
+| `Pages/Driver/` | Driver App page objects (`DriverOnboardingPage`, `DriverHomePage`, `DriverReceiptPage`). `DriverHomePage` also covers Receive via Bluetooth, the truck code and toasts |
+| `Flows/` | Steps shared by tests: `CollectionLoadTicketFlow` (Flex login → submitted collection ticket), `DriverAppFlow` (Driver App onto Home, restart) |
+| `Utilities/NearbyDevicesPermission.cs` | Resets, answers and checks Android's *Nearby devices* (Bluetooth) permission |
+| `Utilities/BaselineRecorder.cs` | Saves a run's measurements as JSON under `Baselines/` |
 | `Drivers/DriverFactory.cs` | Starts the browsers (Web) or the Appium sessions (Mobile); forwards backend ports to the emulators |
 | `Utilities/FakeCameraFeed.cs` | Web: feeds an image (QR code) to the browser's fake camera |
 | `Utilities/QrScanFeed.cs` | Hands a QR code to an app's scanner (Web: fake camera; Mobile: see [How Mobile mode handles the camera](#how-mobile-mode-handles-the-camera)) |
@@ -259,6 +299,22 @@ dotnet test --filter "Name~E2E_Node3" --logger "console;verbosity=detailed"
 
 The cases run at the same time: `[Parallelizable(ParallelScope.Children)]`, up to `LevelOfParallelism(3)` in `Properties/AssemblyInfo.cs`, which is exactly three nodes. Raise it if you add a fourth node. Each case uses the node pair it names, not the shared node pool. A run takes about **4–5 minutes** per node, and the parallel run takes about as long as the slower node. Leave the emulators alone while it runs.
 
+**BLE handoff (TC-12 / TC-13)**, Node 2 and Node 3 in parallel. Only those two node pairs need to be running (`.\Setup\Start-MobileGrid.ps1 -Nodes 2,3`):
+
+```powershell
+dotnet test --filter "Category=BLE" --logger "console;verbosity=normal"
+```
+
+A run takes about **4 minutes** per node. On a pass, the console shows the truck code, the send status and the timing, for example:
+
+```
+🚚 Driver app is waiting for the monitor as RTD-JB03.
+📡 Flex: 'Sent to RTD-JB03' after 3.1 s.
+🚚 Driver app: current load 9T4F-LC-1007 after 3.4 s (toast: 'Load 9T4F-LC-1007 received.').
+```
+
+A run whose load took longer than 5 s ends with a **warning** outcome. The `dotnet test` summary doesn't count that as passed, but all of its checks held. The recorded JSON shows its numbers.
+
 All nodes pick the **first truck**. If the backend ever allows only one active load per truck, every node but the first will fail at the Driver scan step.
 
 ### How Mobile mode handles the camera
@@ -287,6 +343,8 @@ All nodes pick the **first truck**. If the backend ever allows only one active l
 #### Other emulator-specific handling
 
 - **Login:** on an emulator, the LOG IN tap sometimes only focuses the button. The test checks that the form went away and taps once more if needed. If it's still on the form, it fails and lists the error messages the app shows.
+- **Driver App launch after a cold boot:** on the first session after an emulator boots, Appium's `am start` can hang and leave the launcher in front. `DriverAppFlow.StartOnHome` then opens the Driver App itself (*"Driver app not in front after the session started"*).
+- **Driver App toasts:** a toast such as *"Load … received."* closes after a couple of seconds, and with two node pairs running it could be gone before the test read it. The BLE test therefore records toasts as the app shows them (`DriverHomePage.StartRecordingToasts`), starting just before it sends.
 - **Driver App tutorial (Android 13+):** SKIP is drawn under the status bar and is missing from the native screen layout. The test recognises the tutorial by its slides and taps SKIP inside the app's WebView.
 - **Assignment with a filled-in Position:** some accounts show *Position* instead of *Labor Category*. The test re-selects the Position so the assignment passes validation and the modal closes.
 
@@ -321,3 +379,8 @@ All nodes pick the **first truck**. If the backend ever allows only one active l
 | *Street Name was not filled in ... (reverse geocoding failed twice)* | The emulator can't reach the address lookup (ArcGIS), or the GPS fix never arrived. Check the emulator's network, or run `adb -s <serial> emu geo fix -81.69 28.16` while the form is waiting |
 | `No QR code could be read from the staged image` | The QR image couldn't be decoded. Check the `QrCodes/*.png` attachment for a cropped or blank image |
 | Driver App stuck on the tutorial (Android 13+) | The WebView SKIP tap failed. Look for the SKIP button in the Driver failure `.html` |
+| `Grid_Node2_Driver (emulator-5560) is not responding to adb` | That emulator isn't running. Check with `adb devices` and `adb -s <serial> emu avd name`. Emulators started by hand take the first free port, so an AVD can end up on another node's port. Fix it with `.\Setup\Start-MobileGrid.ps1 -Stop`, then start the grid with the script |
+| `No configured Flex account matches 'testuser4'` | A BLE fixture names an account that isn't in user-secrets. Set it under any `TestSettings:<name>:LoginEmail` / `LoginPassword` |
+| BLE: *Flex did not find the Driver app 'RTD-XXXX' after 3 Bluetooth searches* | The Driver App stopped advertising (it advertises for 2 minutes after Receive via Bluetooth), or the emulator's Bluetooth is off. The message lists the truck codes Flex did find |
+| BLE: `sendResult` is *"Waiting for confirmation…"* or a failure message | Flex sent the ticket but the Driver App didn't confirm it. Check that the Driver emulator is responsive and run again |
+| BLE: a fixture shows neither *Passed* nor *Failed* | The run passed every check but took over 5 s, so it ended with a warning. See `Baselines/BLE-TC12_<node>_*.json` |
