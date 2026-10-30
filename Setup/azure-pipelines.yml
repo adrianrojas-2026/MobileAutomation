@@ -1,117 +1,151 @@
-# 1. Continuous Integration Trigger: Run automatically on every push to main
-trigger:
-  - main # Triggers the pipeline when a push is made to the main branch
+# ==============================================================================
+# MOBILE SUITE (Flex + Driver App on Android emulators, local Aspire backend)
+# Everything runs on one self-hosted Windows agent: the emulators share one simulated Bluetooth only on the same
+# host, and Aspire's containers and the emulators both need virtualization (nested, on a VM). The steps themselves
+# are Setup\Run-Suite.ps1, the same script a local run uses.
+#
+# Agent prerequisites (see README, "Running in Azure DevOps"): Windows 11 / Server 2022 with Hyper-V, Windows
+# Hypervisor Platform and WSL2; Docker; .NET 10 SDK; JDK 21; Node + pnpm; Appium 2+ with the UiAutomator2 driver;
+# Android SDK with the grid's AVDs (Setup\Start-MobileGrid.ps1); the agent running as the user that owns the AVDs,
+# interactively (not as a service); the AppHost's settings / user secrets (e.g. the SQL Server password).
+# ==============================================================================
 
-# 2. Automated Scheduled Triggers: Run automatically on a time-based schedule
+# Runs on the schedule or by hand; a push to the test repo does not start a 30+ minute emulator run
+trigger: none
+pr: none
+
 schedules:
-- cron: "0 2 * * 1-5" # Runs every Monday through Friday at 2:00 AM UTC
-  displayName: "Nightly E2E Dual-App Regression Suite"
-  branches:
-    include:
-      - main # Specifies which branch code to pull for the scheduled run
-  always: true # Runs even if there are no new code changes since the last run
+  - cron: "0 7 * * 1-5"   # 07:00 UTC, Monday to Friday
+    displayName: Nightly mobile suite
+    branches:
+      include: [main]
+    always: true
 
-# Defines the machine pool where your dedicated Azure Server Agent is registered
+parameters:
+  - name: filter
+    displayName: Tests to run (dotnet test --filter)
+    type: string
+    default: Category=BLE
+  - name: nodes
+    displayName: Emulator nodes
+    type: string
+    default: 2,3
+  - name: uiSource
+    displayName: Flex / Driver App code to build
+    type: string
+    default: blePoc
+    values:
+      - blePoc          # GitHub recoverytrac-ble-poc: the BLE handoff code, until it is merged into RecoveryTrac.UI
+      - aspireSubmodule # the RecoveryTrac.UI submodule the Aspire repo pins
+  - name: rebuildApks
+    displayName: Build and install fresh debug APKs
+    type: boolean
+    default: true
+
+resources:
+  repositories:
+    - repository: aspire
+      type: git
+      name: RecoveryTrac/Aspire
+      ref: refs/heads/main
+    - repository: blePoc
+      type: github
+      name: TetraTec-BP-Team/recoverytrac-ble-poc
+      endpoint: GitHub-TetraTec   # TODO: GitHub service connection with read access to the repo
+      ref: refs/heads/main
+  # TODO: once the BLE code ships to QA, run after the UI pipelines:
+  # pipelines:
+  #   - pipeline: driverAppQa
+  #     source: 'RecoveryTrac.UI - Driver-App - QA'
+  #     trigger: true
+
 pool:
-  name: 'MyDedicatedMobilePool' # Replace with your actual Azure DevOps Agent Pool name
+  name: MobileGrid   # TODO: the self-hosted pool System Engineering creates
 
 variables:
-  buildConfiguration: 'Release'
+  # Secret variables: TestSettings-LoginEmail, TestSettings-LoginPassword, and the same per node
+  # (TestSettings-Node2-LoginEmail, ...). Mapped to the tests' TestSettings__<key> environment variables below
+  - group: MobileAutomation-Secrets
+  - name: resultsDirectory
+    value: $(Agent.TempDirectory)/mobile-results
+  - name: uiPath
+    ${{ if eq(parameters.uiSource, 'blePoc') }}:
+      value: $(Pipeline.Workspace)/s/RecoveryTrac.UI-ble/apps
+    ${{ else }}:
+      value: $(Pipeline.Workspace)/s/Aspire/RecoveryTrac.UI/apps
 
-steps:
-# STEP 1: Install the required .NET SDK on the server
-- task: UseDotNet@2
-  displayName: 'Install Latest .NET SDK'
-  inputs:
-    packageType: 'sdk'
-    version: '10.x' # Aligned to ensure compatibility with net10.0 compilation rules
+jobs:
+  - job: MobileSuite
+    displayName: Mobile suite (${{ parameters.filter }})
+    timeoutInMinutes: 180
+    workspace:
+      clean: outputs
+    steps:
+      - checkout: self
+        path: s/MobileAutomation
+        clean: true
+      # Submodules are fetched below: .gitmodules uses SSH URLs, which the checkout task cannot use
+      - checkout: aspire
+        path: s/Aspire
+        clean: true
+        persistCredentials: true
+      - ${{ if eq(parameters.uiSource, 'blePoc') }}:
+          - checkout: blePoc
+            path: s/RecoveryTrac.UI-ble
+            clean: true
 
-# STEP 2: Restore NuGet packages (Appium, Selenium, NUnit, etc.)
-- task: DotNetCoreCLI@2
-  displayName: 'Restore NuGet Packages'
-  inputs:
-    command: 'restore'
-    projects: '**/*.csproj'
+      - pwsh: |
+          # Rewrite the SSH submodule URLs to HTTPS and authenticate with the job's token
+          git config --global url."https://dev.azure.com/TDRRecoveryTrac/RecoveryTrac/_git/".insteadOf "git@ssh.dev.azure.com:v3/TDRRecoveryTrac/RecoveryTrac/"
+          git -c http.extraheader="AUTHORIZATION: bearer $(System.AccessToken)" submodule update --init --recursive --depth 1
+          if ($LASTEXITCODE -ne 0) { throw "Submodule update failed." }
+        workingDirectory: $(Pipeline.Workspace)/s/Aspire
+        displayName: Aspire submodules
 
-# STEP 3: Compile the Test Solution
-- task: DotNetCoreCLI@2
-  displayName: 'Build Automation Solution'
-  inputs:
-    command: 'build'
-    projects: '**/*.csproj'
-    arguments: '--configuration $(buildConfiguration)'
+      - task: UseDotNet@2
+        displayName: .NET 10 SDK
+        inputs:
+          packageType: sdk
+          version: 10.x
 
-# STEP 4: Boot all 6 Android Emulators concurrently via your custom Bootstrapper script
-- task: PowerShell@2
-  displayName: 'Launch 6-Emulator Testing Grid (Headless PowerShell)'
-  inputs:
-    filePath: '$(Build.SourcesDirectory)/Setup/Start-MobileGrid.ps1'
-    errorActionPreference: 'stop'
+      - pwsh: |
+          & ./Setup/Run-Suite.ps1 `
+            -AspirePath "$(Pipeline.Workspace)/s/Aspire" `
+            -UiPath "$(uiPath)" `
+            -Nodes ${{ parameters.nodes }} `
+            -Filter "${{ parameters.filter }}" `
+            -ResultsDirectory "$(resultsDirectory)" `
+            -RebuildApks:$${{ parameters.rebuildApks }} `
+            -Headless -Teardown
+          exit $LASTEXITCODE
+        workingDirectory: $(Pipeline.Workspace)/s/MobileAutomation
+        displayName: Run the mobile suite
+        env:
+          TestSettings__LoginEmail: $(TestSettings-LoginEmail)
+          TestSettings__LoginPassword: $(TestSettings-LoginPassword)
+          TestSettings__Node2__LoginEmail: $(TestSettings-Node2-LoginEmail)
+          TestSettings__Node2__LoginPassword: $(TestSettings-Node2-LoginPassword)
+          TestSettings__Node3__LoginEmail: $(TestSettings-Node3-LoginEmail)
+          TestSettings__Node3__LoginPassword: $(TestSettings-Node3-LoginPassword)
 
-# STEP 5: Start the Appium Server safely in a completely isolated background process window
-- task: PowerShell@2
-  displayName: 'Start Background Appium Server Node'
-  inputs:
-    targetType: 'inline'
-    script: |
-      Write-Host "Launching Appium Engine in background window stream..."
-      # Start-Process prevents Azure DevOps from hanging on the live logging stream hook
-      Start-Process -FilePath "cmd.exe" -ArgumentList "/c appium --port 4723 --allow-insecure chromedriver_autodownload" -WindowStyle Hidden
-      
-      Write-Host "Allowing 5 seconds for local Appium loop to bind port 4723..."
-      Start-Sleep -Seconds 5
-      
-      # Optional quick-check validating loop presence
-      netstat -ano | findstr 4723
+      - task: PublishTestResults@2
+        displayName: Publish test results
+        condition: always()
+        inputs:
+          testResultsFormat: VSTest
+          testResultsFiles: '**/mobile-tests.trx'
+          searchFolder: $(resultsDirectory)
+          testRunTitle: Mobile suite (${{ parameters.filter }})
+          # The suite step already fails the run when a test fails
+          failTaskOnFailedTests: false
 
-# STEP 6: Execute the NUnit Dual-App Mobile Automation Tests
-- task: DotNetCoreCLI@2
-  displayName: 'Execute NUnit Automated Tests'
-  inputs:
-    command: 'test'
-    projects: '**/*.csproj'
-    arguments: '--configuration $(buildConfiguration) --no-build --logger:"trx;LogFileName=dual_test_results.trx"'
-  continueOnError: true # Forces the pipeline to move to reporting even if tests fail
+      - publish: $(resultsDirectory)
+        artifact: mobile-results-$(System.JobAttempt)
+        displayName: Publish HTML report, baselines, screenshots and logs
+        condition: always()
 
-# STEP 7: Publish test execution outcomes to Azure DevOps Test dashboard
-- task: PublishTestResults@2
-  displayName: 'Publish Execution Reports'
-  inputs:
-    testResultsFormat: 'VSTest'
-    testResultsFiles: '**/*.trx'
-    mergeTestResults: true
-    failTaskOnFailedTests: false # Keeps pipeline running to publish artifacts if asserts fail
-
-# STEP 7.5: PUBLISH YOUR CUSTOM HTML REPORTS & SCREENSHOTS
-- task: PublishBuildArtifacts@1
-  displayName: 'Publish Custom HTML Automation Dashboard'
-  inputs:
-    # Dynamically tracking path structure variations matching current compile targets
-    PathtoPublish: '$(Build.SourcesDirectory)/MobileAutomation-Appium/bin/Release/net10.0/Reports'
-    ArtifactName: 'Mobile_Automation_HTML_Report'
-    publishLocation: 'Container'
-  condition: always() # Forces dashboard generation even if some tests threw assertion failures
-
-# STEP 8: Clean up and safely force-kill ALL 6 emulators to release Server RAM & CPU completely
-- task: PowerShell@2
-  displayName: 'Teardown Android Emulators & Release Infrastructure RAM'
-  inputs:
-    targetType: 'inline'
-    script: |
-      Write-Host "Sending soft-shutdown signals via ADB to clean execution blocks..."
-      $emulators = @("emulator-5554", "emulator-5556", "emulator-5558", "emulator-5560", "emulator-5562", "emulator-5564")
-      foreach ($emu in $emulators) {
-          & "$env:ANDROID_HOME\platform-tools\adb.exe" -s $emu shell reboot -p 2>$null
-      }
-      
-      Start-Sleep -Seconds 3
-      
-      Write-Host "Executing fallback hard-wipe of underlying window system process threads to prevent offline hang locks..."
-      # Hard kill ensures no zombie threads remain hidden on your dedicated cloud VM
-      Stop-Process -Name "qemu-system-x86_64" -Force -ErrorAction SilentlyContinue
-      Stop-Process -Name "emulator" -Force -ErrorAction SilentlyContinue
-      
-      Write-Host "Flushing global ADB network connections..."
-      & "$env:ANDROID_HOME\platform-tools\adb.exe" kill-server
-      Write-Host "Teardown execution loop concluded successfully."
-  condition: always() # Ensures your server agent's memory deck is wiped clean even if a scenario crashes
+      # Run-Suite -Teardown already stops everything; this covers a cancelled or timed-out run
+      - pwsh: ./Setup/Run-Suite.ps1 -Stop -Nodes ${{ parameters.nodes }} -ResultsDirectory "$(resultsDirectory)"
+        workingDirectory: $(Pipeline.Workspace)/s/MobileAutomation
+        displayName: Stop emulators, Appium and Aspire
+        condition: always()
