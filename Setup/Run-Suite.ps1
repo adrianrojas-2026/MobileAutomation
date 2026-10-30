@@ -64,6 +64,33 @@ function Test-Port([int]$port) {
     finally { $client.Dispose() }
 }
 
+function Test-Docker {
+    & docker info *> $null
+    return $LASTEXITCODE -eq 0
+}
+
+# Aspire runs SQL Server, Redis and Liquibase as containers. Starts Docker Desktop when it is installed but not
+# running (a pipeline agent normally runs Docker as a service, so it is already up there)
+function Start-Docker {
+    if (Test-Docker) { return }
+
+    # Machine-wide install, or the per-user one (AppData\Local\Programs)
+    $desktop = @(
+        (Join-Path $env:ProgramFiles "Docker\Docker\Docker Desktop.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\DockerDesktop\Docker Desktop.exe")
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $desktop) { throw "Docker is not running and Docker Desktop was not found. Start Docker and run this again." }
+
+    Write-Host "Docker is not running. Starting Docker Desktop..."
+    Start-Process $desktop
+    $deadline = (Get-Date).AddMinutes(3)
+    while (-not (Test-Docker)) {
+        if ((Get-Date) -gt $deadline) { throw "Docker Desktop did not become ready within 3 minutes." }
+        Start-Sleep -Seconds 5
+    }
+    Write-Host "Docker is up." -ForegroundColor Green
+}
+
 function Test-Appium {
     try { return (Invoke-RestMethod "$appiumUrl/status" -TimeoutSec 3).value.ready -ne $false }
     catch { return $false }
@@ -131,8 +158,7 @@ try {
             Write-Host "$($answering.Count) of $($aspirePorts.Count) Aspire service ports answer; waiting for the running AppHost." -ForegroundColor Yellow
         }
         else {
-            & docker info *> $null
-            if ($LASTEXITCODE -ne 0) { throw "Docker is not running. Aspire runs SQL Server, Redis and Liquibase as containers; start Docker and run this again." }
+            Start-Docker
 
             $appHost = Join-Path $AspirePath "RecoveryTrac.AppHost"
             if (-not (Test-Path $appHost)) { throw "No RecoveryTrac.AppHost under '$AspirePath' (set -AspirePath)." }

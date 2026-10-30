@@ -363,7 +363,7 @@ All nodes pick the **first truck**. If the backend ever allows only one active l
 
 Does everything in [Before each Mobile run](#before-each-mobile-run), then runs the tests:
 
-1. **Aspire:** uses it when its service ports answer, and waits when only some do (an AppHost still starting). Otherwise it starts `RecoveryTrac.AppHost` (Docker must be running) and waits for the ports.
+1. **Aspire:** uses it when its service ports answer, and waits when only some do (an AppHost still starting). Otherwise it starts `RecoveryTrac.AppHost` and waits for the ports. If Docker isn't running, it starts Docker Desktop first and waits for it (up to 3 minutes).
 2. **Appium:** uses the one on port 4723, or starts it with the right `--allow-insecure` form for its version.
 3. **Grid:** `Start-MobileGrid.ps1 -Nodes ...`.
 4. **Apps:** with `-RebuildApks`, builds both debug APKs (`Build-DebugApk.ps1`) and installs them on every node. With `-FlexApk` / `-DriverApk`, installs those. Otherwise keeps what's installed.
