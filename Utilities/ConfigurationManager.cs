@@ -14,5 +14,7 @@ public static class TestConfiguration
                 optional: false,
                 reloadOnChange: false)
             .AddUserSecrets(typeof(TestConfiguration).Assembly, optional: true)
+            // Pipelines pass the login secrets as TestSettings__<key> variables
+            .AddEnvironmentVariables()
             .Build();
 }

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Used by Setup\Run-Suite.ps1 (dotnet test settings). -->
+<RunSettings>
+  <NUnit>
+    <!-- Assert.Warn (e.g. a BLE load slower than its target) is reported as Skipped by default, which hides a
+         handoff that worked. Report it as Passed; the warning text stays in the test output and the HTML report. -->
+    <MapWarningTo>Passed</MapWarningTo>
+  </NUnit>
+</RunSettings>

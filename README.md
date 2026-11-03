@@ -123,6 +123,9 @@ Details are in Part C of `docs/testing/test-scenarios-ble-ticket-handoff.md`.
 | `Utilities/AdbHelper.cs` | `adb` helpers: port forwarding and adding photos to the gallery |
 | `Setup/Start-MobileGrid.ps1` | Starts the six node emulators on their fixed ports, then checks each one's Android version and installed APK |
 | `Setup/Build-DebugApk.ps1` | Builds and installs the Flex / Driver debug APKs against the local backend |
+| `Setup/Run-Suite.ps1` | A whole run in one command: Aspire, Appium, grid, APKs, tests, results (see [One-command run](#one-command-run-setuprun-suiteps1)) |
+| `Setup/mobile.runsettings` | `dotnet test` settings used by `Run-Suite.ps1` (NUnit warnings reported as Passed) |
+| `Setup/azure-pipelines.yml` | Azure DevOps pipeline for a self-hosted agent (see [Running in Azure DevOps](#running-in-azure-devops)) |
 | `Config/appsettings.json` | Run mode, URLs, Appium and emulator settings |
 | `TestData/` | Test images (e.g. `DebrisPile.png`) |
 
@@ -147,6 +150,8 @@ Details are in Part C of `docs/testing/test-scenarios-ble-ticket-handoff.md`.
   dotnet user-secrets set TestSettings:Node3:LoginEmail "<third flex test user email>"
   dotnet user-secrets set TestSettings:Node3:LoginPassword "<third flex test user password>"
   ```
+
+  Environment variables override these, with `__` for `:` (e.g. `TestSettings__Node2__LoginEmail`). The pipeline passes its secrets that way.
 
   A node uses `TestSettings:<node>:LoginEmail` / `LoginPassword` when that email is set. Node 1 falls back to the default account; Node 2 and Node 3 must have their own. Each account needs the same setup: a project and task assignment, and access to the *Load - Collection* and *Load - Disposal* forms.
 
@@ -300,6 +305,8 @@ Each emulator reaches the local services as `https://localhost:<port>` through `
 | 7013 | Driver service (Driver App) |
 | 7107 | RecoveryTrac Web API |
 
+The local AppHost runs DriverService on 52006, not 7013, so nothing answers on 7013 locally. The Driver App's `environment.ts` still calls 7013, so its DriverService calls fail locally; the BLE handoff only uses the Web API (7107). `Run-Suite.ps1` doesn't wait for 7013 (`-OptionalPorts`).
+
 If Aspire ever assigns different ports, update this list and the port table in `Setup/Build-DebugApk.ps1`. The real values are in the web bundle on `localhost:8100` (search it for `localhost:52`). If a port is missing, the app shows *"Unable to reach server"* at login.
 
 ### Before each Mobile run
@@ -348,9 +355,31 @@ A run takes about **4 minutes** per node. On a pass, the console shows the truck
 dotnet test --filter "Category=BLE-R1-C1" --logger "console;verbosity=normal"
 ```
 
-A run whose load took longer than 5 s ends with a **warning** outcome. The `dotnet test` summary doesn't count that as passed, but all of its checks held. The recorded JSON shows its numbers.
+A run whose load took longer than 5 s ends with a **warning** outcome. The `dotnet test` summary doesn't count that as passed (Test Explorer shows it as Skipped), but all of its checks held. The recorded JSON shows its numbers. `Run-Suite.ps1` passes `Setup/mobile.runsettings`, which reports warnings as Passed; add `--settings Setup/mobile.runsettings` to a plain `dotnet test` for the same.
 
 All nodes pick the **first truck**. If the backend ever allows only one active load per truck, every node but the first will fail at the Driver scan step.
+
+### One-command run (`Setup/Run-Suite.ps1`)
+
+Does everything in [Before each Mobile run](#before-each-mobile-run), then runs the tests:
+
+1. **Aspire:** uses it when its service ports answer, and waits when only some do (an AppHost still starting). Otherwise it starts `RecoveryTrac.AppHost` and waits for the ports. If Docker isn't running, it starts Docker Desktop first and waits for it (up to 3 minutes).
+2. **Appium:** uses the one on port 4723, or starts it with the right `--allow-insecure` form for its version.
+3. **Grid:** `Start-MobileGrid.ps1 -Nodes ...`.
+4. **Apps:** with `-RebuildApks`, builds both debug APKs (`Build-DebugApk.ps1`) and installs them on every node. With `-FlexApk` / `-DriverApk`, installs those. Otherwise keeps what's installed.
+5. **Tests:** `dotnet test` with `-Filter` and `Setup/mobile.runsettings`.
+6. **Results** go to one folder (default `TestResults/run`): `mobile-tests.trx`, the HTML reports, baselines, failure screenshots, and the Aspire / Appium logs when it started them.
+
+```powershell
+.\Setup\Run-Suite.ps1                                    # Category=BLE on nodes 2,3, apps as installed
+.\Setup\Run-Suite.ps1 -RebuildApks                       # fresh debug APKs from the UI repo first
+.\Setup\Run-Suite.ps1 -Filter "Category=BLE-R1-C1" -Nodes 2
+.\Setup\Run-Suite.ps1 -Target QA -FlexApk <flex.apk> -DriverApk <driver.apk>   # QA services, no Aspire
+.\Setup\Run-Suite.ps1 -Teardown                          # stop the grid, and Appium / Aspire if it started them
+.\Setup\Run-Suite.ps1 -Stop                              # only that teardown
+```
+
+The exit code is the `dotnet test` one (non-zero when a test failed). `-AspirePath` (default `C:\Users\adrian.rojas\tetratec\Aspire`) and `-UiPath` (default its `RecoveryTrac.UI\apps`) point at other checkouts. `-Target QA` needs APKs built against the QA services; the BLE code isn't in QA yet, so use `Local` for the BLE tests.
 
 ### How Mobile mode handles the camera
 
@@ -384,6 +413,29 @@ All nodes pick the **first truck**. If the backend ever allows only one active l
 - **Assignment with a filled-in Position:** some accounts show *Position* instead of *Labor Category*. The test re-selects the Position so the assignment passes validation and the modal closes.
 
 ---
+
+## Running in Azure DevOps
+
+`Setup/azure-pipelines.yml` runs `Run-Suite.ps1` on one **self-hosted** Windows agent. Microsoft-hosted agents can't run it: they have no nested virtualization or room for four emulators, and the BLE tests need every emulator on one host (they share one simulated Bluetooth).
+
+**Agent (pool `MobileGrid`, to be created):**
+
+| Item | Requirement |
+|---|---|
+| Machine | Windows 11 / Server 2022 with nested virtualization (Azure Dv5/Ev5 class: 16 vCPU, 64 GB RAM, 256 GB+ SSD) |
+| Virtualization | Hyper-V, Windows Hypervisor Platform (emulators), WSL2 (Docker) |
+| Tools | Docker, .NET 10 SDK, JDK 21, Node + pnpm, Appium 2+ with UiAutomator2, Android SDK with the grid's AVDs |
+| Agent account | The user that owns the AVDs, running interactively with auto-logon (a service account can't see the AVDs or show a session) |
+| Aspire | The AppHost's settings / user secrets (e.g. `Parameters:SqlServerPassword`), the dev certificate trusted and copied into the UI repo as in [Dev certificate](#3-debug-apks-that-talk-to-the-local-backend) |
+| Test data | The test accounts (`testuser1`–`4`) in the agent's local database, with the same setup as in [Prerequisites](#prerequisites-both-modes) |
+
+**Pipeline setup:**
+
+- A variable group `MobileAutomation-Secrets` with the secrets `TestSettings-LoginEmail`, `TestSettings-LoginPassword`, `TestSettings-Node2-LoginEmail`, ... (mapped to `TestSettings__...` in the YAML).
+- A GitHub service connection (`GitHub-TetraTec` in the YAML) to check out `recoverytrac-ble-poc`, as long as the BLE code is only there. Parameter `uiSource: aspireSubmodule` builds the UI submodule the Aspire repo pins instead.
+- The job's build service account needs read access to the Aspire, Services, DataHub, Documentation and RecoveryTrac.UI repos. The YAML rewrites the submodules' SSH URLs to HTTPS, because the checkout task can't use SSH.
+
+It runs nightly on weekdays and by hand (parameters: filter, nodes, UI source, rebuild APKs). Results appear in the run's **Tests** tab; the HTML report, baselines, screenshots and logs are in the `mobile-results-<attempt>` artifact. A failed test fails the run.
 
 ## Failure evidence and reports
 

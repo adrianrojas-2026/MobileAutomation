@@ -64,6 +64,8 @@ public static class DriverFactory
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("Config/appsettings.json", optional: false, reloadOnChange: false)
             .AddUserSecrets(typeof(DriverFactory).Assembly, optional: true)
+            // Pipelines pass the login secrets as TestSettings__<key> variables
+            .AddEnvironmentVariables()
             .Build();
 
         var appiumSection = config.GetSection("Appium");
@@ -161,6 +163,8 @@ public static class DriverFactory
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("Config/appsettings.json", optional: false, reloadOnChange: false)
             .AddUserSecrets(typeof(DriverFactory).Assembly, optional: true)
+            // Pipelines pass the login secrets as TestSettings__<key> variables
+            .AddEnvironmentVariables()
             .Build();
 
         string runMode = config["TestSettings:RunMode"] ?? "Mobile";
