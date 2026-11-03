@@ -368,8 +368,9 @@ Does everything in [Before each Mobile run](#before-each-mobile-run), then runs 
 2. **Appium:** uses the one on port 4723, or starts it with the right `--allow-insecure` form for its version.
 3. **Grid:** `Start-MobileGrid.ps1 -Nodes ...`.
 4. **Apps:** with `-RebuildApks`, builds both debug APKs (`Build-DebugApk.ps1`) and installs them on every node. With `-FlexApk` / `-DriverApk`, installs those. Otherwise keeps what's installed.
-5. **Tests:** `dotnet test` with `-Filter` and `Setup/mobile.runsettings`.
-6. **Results** go to one folder (default `TestResults/run`): `mobile-tests.trx`, the HTML reports, baselines, failure screenshots, and the Aspire / Appium logs when it started them.
+5. **Bluetooth:** on each emulator of the run, closes crash dialogs and restarts Bluetooth when it is off, when Android's Bluetooth service crashed, or when the shared Bluetooth simulator (`netsimd`) restarted after the emulator booted. That restart makes every running emulator's Bluetooth abort (*"Bluetooth keeps stopping"*, `Hardware Error Event with code 0x42`). If Bluetooth doesn't come back, cold-boot the grid: `.\Setup\Start-MobileGrid.ps1 -Stop`, then `.\Setup\Start-MobileGrid.ps1 -Nodes 2,3 -ColdBoot`.
+6. **Tests:** `dotnet test` with `-Filter` and `Setup/mobile.runsettings`.
+7. **Results** go to one folder (default `TestResults/run`): `mobile-tests.trx`, the HTML reports, baselines, failure screenshots, and the Aspire / Appium logs when it started them.
 
 ```powershell
 .\Setup\Run-Suite.ps1                                    # Category=BLE on nodes 2,3, apps as installed

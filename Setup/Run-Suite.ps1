@@ -103,6 +103,51 @@ function Get-NodeUdid([int]$node, [string]$role) {
     return $section.Udid
 }
 
+function Get-BluetoothOn([string]$udid) {
+    return ((& $adbPath -s $udid shell settings get global bluetooth_on 2>$null) -join '').Trim() -eq "1"
+}
+
+# All emulators share one Bluetooth simulator (netsimd). When it restarts, every emulator booted before it loses its
+# virtual controller and Android's Bluetooth service aborts ("Hardware Error Event with code 0x42"), leaving a
+# "Bluetooth keeps stopping" dialog over the screen. Restart Bluetooth where that happened, or where it is off, and
+# close crash dialogs, so a BLE test doesn't start on a dead stack
+function Repair-Bluetooth([string[]]$udids) {
+    $netsim = Get-Process netsimd -ErrorAction SilentlyContinue | Sort-Object StartTime | Select-Object -Last 1
+    foreach ($udid in $udids) {
+        $reasons = @()
+        $uptime = [double]::Parse(((& $adbPath -s $udid shell cat /proc/uptime) -split ' ')[0], [Globalization.CultureInfo]::InvariantCulture)
+        $booted = (Get-Date).AddSeconds(-$uptime)
+        if ($netsim -and $netsim.StartTime -gt $booted.AddMinutes(2)) {
+            $reasons += "the Bluetooth simulator restarted at $($netsim.StartTime.ToString('HH:mm:ss')), after this emulator booted"
+        }
+        $crash = & $adbPath -s $udid logcat -d -v time 2>$null |
+            Select-String -Pattern 'Cmdline: com\.(google\.)?android\.bluetooth' | Select-Object -Last 1
+        if ($crash) { $reasons += "Android's Bluetooth service crashed ($($crash.Line.Substring(0, 18).Trim()))" }
+        if (-not (Get-BluetoothOn $udid)) { $reasons += "Bluetooth is off" }
+
+        # Crash / ANR dialogs cover the app and swallow the tests' taps
+        & $adbPath -s $udid shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS *> $null
+
+        if ($reasons.Count -eq 0) {
+            Write-Host " - ${udid}: Bluetooth OK." -ForegroundColor Green
+            continue
+        }
+        Write-Host " ! ${udid}: restarting Bluetooth ($($reasons -join '; '))..." -ForegroundColor Yellow
+        & $adbPath -s $udid shell cmd bluetooth_manager disable *> $null
+        Start-Sleep -Seconds 3
+        & $adbPath -s $udid shell cmd bluetooth_manager enable *> $null
+        $deadline = (Get-Date).AddSeconds(30)
+        while (-not (Get-BluetoothOn $udid)) {
+            if ((Get-Date) -gt $deadline) { throw "Bluetooth on $udid did not come back on after a restart. Cold-boot the grid: Start-MobileGrid.ps1 -Stop, then -ColdBoot." }
+            Start-Sleep -Seconds 2
+        }
+        # The stack reports ON before it can scan / advertise again
+        Start-Sleep -Seconds 5
+        & $adbPath -s $udid shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS *> $null
+        Write-Host " - ${udid}: Bluetooth back on." -ForegroundColor Green
+    }
+}
+
 function Save-State([hashtable]$state) {
     New-Item -ItemType Directory -Force $ResultsDirectory | Out-Null
     $state | ConvertTo-Json | Set-Content $stateFile
@@ -264,6 +309,9 @@ try {
     else {
         Write-Host "`nUsing the apps already installed on the emulators (pass -RebuildApks or -FlexApk/-DriverApk to replace them)." -ForegroundColor Gray
     }
+
+    Write-Step "Bluetooth"
+    Repair-Bluetooth (@($Nodes | ForEach-Object { Get-NodeUdid $_ "Flex"; Get-NodeUdid $_ "Driver" }))
 
     # --------------------------------------------------------------------------
     # 5. Tests
