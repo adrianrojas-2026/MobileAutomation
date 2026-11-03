@@ -85,19 +85,20 @@ public class PrivacyPolicyPage : BasePage
     // Returns the route once the app leaves login/sync, or whatever route it is on when the timeout elapses
     private string WaitForPostLoginRoute(int timeoutSeconds)
     {
-        string route = CurrentRoute();
+        string route = string.Empty;
         var deadline = DateTime.Now.AddSeconds(timeoutSeconds);
-        while (!IsPostLoginRoute(route) && DateTime.Now < deadline)
+        while (true)
         {
-            Thread.Sleep(1000);
             try
             {
                 route = CurrentRoute();
             }
             catch (WebDriverException)
             {
-                // WebView context briefly unavailable while the app navigates - poll again
+                // WebView not up yet after login, or briefly unavailable while the app navigates - poll again
             }
+            if (IsPostLoginRoute(route) || DateTime.Now >= deadline) break;
+            Thread.Sleep(1000);
         }
         if (!IsPostLoginRoute(route))
         {

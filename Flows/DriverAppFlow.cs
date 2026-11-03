@@ -65,6 +65,12 @@ public static class DriverAppFlow
         {
             DriverFactory.SwitchToWebViewContext(driverApp);
         }
+        // An emulator that froze mid-test passes the session-start check and only shows up here
+        if (!android.Context.StartsWith("WEBVIEW", StringComparison.Ordinal)
+            && AdbHelper.GetUdid(android) is { } udid && !AdbHelper.IsResponsive(udid))
+        {
+            Assert.Fail($"Could not switch to the Driver app's WEBVIEW context: {udid} is not responding to adb. Restart that emulator.");
+        }
         Assert.That(android.Context, Does.StartWith("WEBVIEW"), "Could not switch to the Driver app's WEBVIEW context.");
     }
 

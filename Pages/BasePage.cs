@@ -152,6 +152,13 @@ public abstract class BasePage
             DriverFactory.SwitchToWebViewContext(androidDriver);
             try
             {
+                // The switch only warns when no WebView is up yet (e.g. right after login). Left in NATIVE_APP, UiAutomator2
+                // would take the script for an unknown 'mobile:' command, so fail with something callers can retry on
+                if (androidDriver.Context == "NATIVE_APP")
+                {
+                    throw new WebDriverException("The app's WebView is not available yet; cannot run the script.");
+                }
+
                 return androidDriver.ExecuteScript(script);
             }
             finally
