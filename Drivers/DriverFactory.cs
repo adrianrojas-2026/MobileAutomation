@@ -397,8 +397,55 @@ public static class DriverFactory
         var launcher = _driverDriverLauncher.Value
             ?? throw new InvalidOperationException("InitializeDualApps() must run before StartDriverApp().");
         Console.WriteLine("🚚 Starting the RecoveryTrac Driver app instance...");
-        _driverDriver.Value = launcher();
+        _driverDriver.Value = LaunchKeepingFlexAwake(launcher);
         return _driverDriver.Value;
+    }
+
+    // Covers a first-time UiAutomator2 install on a slow emulator; a healthy launch takes 10-30 s
+    private static readonly TimeSpan DriverAppLaunchTimeout = TimeSpan.FromMinutes(3);
+
+    // A Driver app session can hang forever when its emulator is stuck on an adb command Appium waits on without a
+    // timeout, and meanwhile the idle Flex session ends at newCommandTimeout. So the session opens in the background,
+    // Flex gets a cheap command every 30 s, and the test fails after DriverAppLaunchTimeout instead of hanging
+    private static IWebDriver LaunchKeepingFlexAwake(Func<IWebDriver> launcher)
+    {
+        if (_driverFlex.Value is not AndroidDriver flex) return launcher();
+
+        var launch = Task.Run(launcher);
+        var deadline = DateTime.UtcNow + DriverAppLaunchTimeout;
+        while (!launch.Wait(TimeSpan.FromSeconds(30)))
+        {
+            if (DateTime.UtcNow >= deadline)
+            {
+                // Should it still come up, end that session rather than leave it holding the emulator
+                launch.ContinueWith(t => t.Result.Quit(), TaskContinuationOptions.OnlyOnRanToCompletion);
+                throw new TimeoutException(
+                    $"The Driver app session ({CurrentEnvironment}) did not start within {DriverAppLaunchTimeout.TotalMinutes:0} minutes. " +
+                    "Its emulator is probably stuck on an adb command (see the Appium log); restart it if this repeats.");
+            }
+            try { _ = flex.Context; }
+            catch (WebDriverException) { }
+        }
+        return launch.GetAwaiter().GetResult();
+    }
+
+    // Why the app behind an Android session can't be driven any more, or null while its process is alive. A crashed
+    // app leaves no WebView, which otherwise surfaces as a misleading "WebView not available" or locator timeout
+    public static string? AppNotRunningReason(AndroidDriver driver)
+    {
+        string? udid = AdbHelper.GetUdid(driver);
+        string? package = (driver.Capabilities.GetCapability("appPackage") ?? driver.Capabilities.GetCapability("appium:appPackage"))?.ToString();
+        if (string.IsNullOrWhiteSpace(udid) || string.IsNullOrWhiteSpace(package)) return null;
+        if (AdbHelper.Read(udid, $"shell pidof {package}", 10000) != string.Empty) return null;
+
+        // Native crashes name the process as ">>> package <<<", Java ones as "Process: package, PID"; ":remote" and other
+        // side processes of the app don't match either
+        string? crash = AdbHelper.Read(udid, "logcat -d -b crash -v time", 15000)
+            .Split('\n', StringSplitOptions.TrimEntries)
+            .LastOrDefault(line => line.Contains($">>> {package} <<<") || line.Contains($"Process: {package}, "));
+        return $"{package} is no longer running on {udid}" +
+               (crash != null ? $"; it crashed: {crash}" : "; it crashed or was closed") +
+               $". See 'adb -s {udid} logcat -d -b crash'.";
     }
 
     private static AppiumOptions ConfigureOptions(IConfigurationSection appiumSection, IConfigurationSection envSection, string appTarget)
@@ -436,7 +483,8 @@ public static class DriverFactory
 
         options.AddAdditionalAppiumOption("appium:noReset", true);
         options.AddAdditionalAppiumOption("appium:shouldTerminateApp", true);
-        options.AddAdditionalAppiumOption("appium:clearDeviceLogsOnStart", true);
+        // No clearDeviceLogsOnStart: its 'logcat -c' can hang on an emulator (seen on Android 16) and Appium waits on it
+        // with no timeout. Keeping the logs also keeps the crash buffer that explains an app that died mid-test
 
         options.AddAdditionalAppiumOption("appium:uiautomator2ServerLaunchTimeout", 240000);
         options.AddAdditionalAppiumOption("appium:uiautomator2ServerInstallTimeout", 240000);
