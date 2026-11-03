@@ -1,0 +1,133 @@
+# ==============================================================================
+# MOBILE SUITE AGAINST QA (Flex + Driver App APKs from the QA pipelines, deployed QA services)
+# Runs after 'RecoveryTrac.UI - Flex - QA' or 'RecoveryTrac.UI - Driver-App - QA' completes: downloads the APK each
+# of them published (the latest successful one for the pipeline that did not trigger the run), installs both on the
+# emulator grid and runs Setup\Run-Suite.ps1 -Target QA. No Aspire, Docker or local backend: the apps call QA.
+#
+# Same self-hosted agent as Setup\azure-pipelines.yml (one host: the emulators share one simulated Bluetooth), minus
+# Docker / WSL2 / Aspire. See README, "Running in Azure DevOps".
+#
+# TODO before the first run:
+#   - Both QA pipelines publish their APK as a pipeline artifact (set flexArtifact / driverArtifact below to its name)
+#     built for the QA environment, with the BLE handoff code in it.
+#   - The test accounts (TestSettings-*) exist in QA, with the same setup as locally (project, task, forms).
+# ==============================================================================
+
+trigger: none
+pr: none
+
+resources:
+  pipelines:
+    - pipeline: flexQa
+      project: RecoveryTrac
+      source: 'RecoveryTrac.UI - Flex - QA'
+      trigger:
+        branches:
+          include: [main, release/*]
+    - pipeline: driverQa
+      project: RecoveryTrac
+      source: 'RecoveryTrac.UI - Driver-App - QA'
+      trigger:
+        branches:
+          include: [main, release/*]
+
+parameters:
+  - name: filter
+    displayName: Tests to run (dotnet test --filter)
+    type: string
+    default: Category=BLE
+  - name: nodes
+    displayName: Emulator nodes
+    type: string
+    default: 2,3
+  - name: flexArtifact
+    displayName: Flex QA pipeline artifact holding the APK
+    type: string
+    default: flex-apk     # TODO: the artifact name the Flex QA pipeline publishes
+  - name: driverArtifact
+    displayName: Driver App QA pipeline artifact holding the APK
+    type: string
+    default: driver-apk   # TODO: the artifact name the Driver-App QA pipeline publishes
+
+pool:
+  name: MobileGrid   # TODO: the self-hosted pool System Engineering creates
+
+variables:
+  # Secret variables: TestSettings-LoginEmail, TestSettings-LoginPassword, TestSettings-Node2-..., TestSettings-Node3-...
+  # holding the QA test accounts
+  - group: MobileAutomation-QA-Secrets
+  - name: resultsDirectory
+    value: $(Agent.TempDirectory)/mobile-results
+
+jobs:
+  - job: MobileSuiteQA
+    displayName: Mobile suite on QA (${{ parameters.filter }})
+    timeoutInMinutes: 120
+    workspace:
+      clean: outputs
+    steps:
+      - checkout: self
+        clean: true
+
+      # The triggering run's artifact, or the latest successful run's for the other pipeline
+      - download: flexQa
+        artifact: ${{ parameters.flexArtifact }}
+        patterns: '**/*.apk'
+        displayName: Download the Flex QA APK
+      - download: driverQa
+        artifact: ${{ parameters.driverArtifact }}
+        patterns: '**/*.apk'
+        displayName: Download the Driver App QA APK
+
+      - task: UseDotNet@2
+        displayName: .NET 10 SDK
+        inputs:
+          packageType: sdk
+          version: 10.x
+
+      - pwsh: |
+          function Find-Apk([string]$folder) {
+            $apks = @(Get-ChildItem $folder -Recurse -Filter *.apk)
+            if ($apks.Count -ne 1) { throw "Expected one APK under $folder, found $($apks.Count): $($apks.Name -join ', ')" }
+            return $apks[0].FullName
+          }
+          $flexApk = Find-Apk "$(Pipeline.Workspace)/flexQa"
+          $driverApk = Find-Apk "$(Pipeline.Workspace)/driverQa"
+          Write-Host "Flex:   $flexApk ($(resources.pipeline.flexQa.runName))"
+          Write-Host "Driver: $driverApk ($(resources.pipeline.driverQa.runName))"
+
+          & ./Setup/Run-Suite.ps1 -Target QA `
+            -FlexApk $flexApk -DriverApk $driverApk `
+            -Nodes ${{ parameters.nodes }} `
+            -Filter "${{ parameters.filter }}" `
+            -ResultsDirectory "$(resultsDirectory)" `
+            -Headless -Teardown
+          exit $LASTEXITCODE
+        displayName: Run the mobile suite on QA
+        env:
+          TestSettings__LoginEmail: $(TestSettings-LoginEmail)
+          TestSettings__LoginPassword: $(TestSettings-LoginPassword)
+          TestSettings__Node2__LoginEmail: $(TestSettings-Node2-LoginEmail)
+          TestSettings__Node2__LoginPassword: $(TestSettings-Node2-LoginPassword)
+          TestSettings__Node3__LoginEmail: $(TestSettings-Node3-LoginEmail)
+          TestSettings__Node3__LoginPassword: $(TestSettings-Node3-LoginPassword)
+
+      - task: PublishTestResults@2
+        displayName: Publish test results
+        condition: always()
+        inputs:
+          testResultsFormat: VSTest
+          testResultsFiles: '**/mobile-tests.trx'
+          searchFolder: $(resultsDirectory)
+          testRunTitle: Mobile suite on QA (${{ parameters.filter }}) - Flex $(resources.pipeline.flexQa.runName), Driver $(resources.pipeline.driverQa.runName)
+          failTaskOnFailedTests: false   # the suite step already fails the run
+
+      - publish: $(resultsDirectory)
+        artifact: mobile-results-qa-$(System.JobAttempt)
+        displayName: Publish HTML report, baselines, screenshots and logs
+        condition: always()
+
+      # Run-Suite -Teardown already stops everything; this covers a cancelled or timed-out run
+      - pwsh: ./Setup/Run-Suite.ps1 -Stop -Nodes ${{ parameters.nodes }} -ResultsDirectory "$(resultsDirectory)"
+        displayName: Stop emulators and Appium
+        condition: always()

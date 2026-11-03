@@ -8,11 +8,14 @@
 #   .\Setup\Start-MobileGrid.ps1 -Stop            # shut the grid's emulators down
 #   .\Setup\Start-MobileGrid.ps1 -Arrange         # just lay out the running emulators' windows side by side
 #   .\Setup\Start-MobileGrid.ps1 -MemoryMB 3072   # more RAM per emulator (default 2048, overrides the AVD's)
+#   .\Setup\Start-MobileGrid.ps1 -ColdBoot        # full boot, not the Quick Boot snapshot (fresh Bluetooth stack)
 # ==============================================================================
 param(
     [int[]]$Nodes = @(1, 2, 3),
     [switch]$Headless,
     [switch]$Stop,
+    # Ignore the Quick Boot snapshot, so Android (and its Bluetooth stack) starts from scratch
+    [switch]$ColdBoot,
     # Only lay out the windows of emulators that are already running (nothing is started or stopped)
     [switch]$Arrange,
     [int]$BootTimeoutSeconds = 300,
@@ -159,6 +162,7 @@ foreach ($emu in $grid) {
     }
 
     $common = "-avd `"$($emu.Avd)`" -port $($emu.Port) -memory $MemoryMB -cores $Cores -no-audio -no-boot-anim"
+    if ($ColdBoot) { $common += " -no-snapshot-load" }
     $arguments = if ($Headless) {
         "$common -no-window -gpu swiftshader_indirect"
     } else {

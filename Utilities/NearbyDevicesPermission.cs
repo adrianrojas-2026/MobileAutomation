@@ -58,9 +58,24 @@ public static class NearbyDevicesPermission
             if (dialog == null) return false;
 
             Console.WriteLine($"📱 Android asks: '{dialog.Text.Trim()}'. Tapping Allow...");
-            driver.FindElement(AllowButton).Click();
-            new WebDriverWait(driver, TimeSpan.FromSeconds(10)).Until(d => !d.FindElements(Dialog).Any());
-            return true;
+            // Android ignores a tap on the permission dialog while another window covers it (e.g. a toast) or while
+            // a busy emulator's System UI lags, so tap again until the dialog closes
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            for (int tap = 1; ; tap++)
+            {
+                driver.FindElements(AllowButton).FirstOrDefault(b => b.Displayed)?.Click();
+                var closed = new WebDriverWait(driver, TimeSpan.FromSeconds(5));
+                closed.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+                try
+                {
+                    closed.Until(d => !d.FindElements(Dialog).Any());
+                    return true;
+                }
+                catch (WebDriverTimeoutException) when (DateTime.UtcNow < deadline)
+                {
+                    Console.WriteLine($"📱 The dialog is still open after tap {tap}; tapping Allow again...");
+                }
+            }
         }
         finally
         {
