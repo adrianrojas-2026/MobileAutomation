@@ -125,7 +125,8 @@ Details are in Part C of `docs/testing/test-scenarios-ble-ticket-handoff.md`.
 | `Setup/Build-DebugApk.ps1` | Builds and installs the Flex / Driver debug APKs against the local backend |
 | `Setup/Run-Suite.ps1` | A whole run in one command: Aspire, Appium, grid, APKs, tests, results (see [One-command run](#one-command-run-setuprun-suiteps1)) |
 | `Setup/mobile.runsettings` | `dotnet test` settings used by `Run-Suite.ps1` (NUnit warnings reported as Passed) |
-| `Setup/azure-pipelines.yml` | Azure DevOps pipeline for a self-hosted agent (see [Running in Azure DevOps](#running-in-azure-devops)) |
+| `Setup/azure-pipelines.yml` | Azure DevOps pipeline for a self-hosted agent, local Aspire backend (see [Running in Azure DevOps](#running-in-azure-devops)) |
+| `Setup/azure-pipelines-qa.yml` | Azure DevOps pipeline that tests the QA builds after the Flex / Driver App QA pipelines finish |
 | `Config/appsettings.json` | Run mode, URLs, Appium and emulator settings |
 | `TestData/` | Test images (e.g. `DebrisPile.png`) |
 
@@ -435,7 +436,21 @@ The exit code is the `dotnet test` one (non-zero when a test failed). `-AspirePa
 - A GitHub service connection (`GitHub-TetraTec` in the YAML) to check out `recoverytrac-ble-poc`, as long as the BLE code is only there. Parameter `uiSource: aspireSubmodule` builds the UI submodule the Aspire repo pins instead.
 - The job's build service account needs read access to the Aspire, Services, DataHub, Documentation and RecoveryTrac.UI repos. The YAML rewrites the submodules' SSH URLs to HTTPS, because the checkout task can't use SSH.
 
-It runs nightly on weekdays and by hand (parameters: filter, nodes, UI source, rebuild APKs). Results appear in the run's **Tests** tab; the HTML report, baselines, screenshots and logs are in the `mobile-results-<attempt>` artifact. A failed test fails the run.
+### Against QA (`Setup/azure-pipelines-qa.yml`)
+
+Once Flex and the Driver App are deployed to QA, this pipeline tests the QA builds instead of a local backend. It runs when `RecoveryTrac.UI - Flex - QA` or `RecoveryTrac.UI - Driver-App - QA` completes, downloads the APK each one published (the latest successful one for the pipeline that didn't trigger the run), and runs `Run-Suite.ps1 -Target QA`. That installs both APKs on the grid and runs the tests, with **no Aspire, Docker or dev certificate**: the apps call the QA services.
+
+Same agent pool, but it needs only the emulator side of the table above: drop Docker, WSL2 and the Aspire items. Before the first run:
+
+- Both QA pipelines publish their APK as a pipeline artifact. Set `flexArtifact` / `driverArtifact` in the YAML to those artifact names.
+- The APKs are built for QA, include the BLE handoff code, and keep the package names the tests expect (`com.tetratech.recoverytracflex`, `com.tetratech.recoverytracdriver`).
+- A variable group `MobileAutomation-QA-Secrets` holds the **QA** test accounts, with the same names as `MobileAutomation-Secrets`. The accounts need the same setup in QA as locally.
+
+The run title in the **Tests** tab names the Flex and Driver App QA builds it tested.
+
+### Schedule and results
+
+The local-Aspire pipeline runs nightly on weekdays and by hand (parameters: filter, nodes, UI source, rebuild APKs). Results appear in the run's **Tests** tab; the HTML report, baselines, screenshots and logs are in the `mobile-results-<attempt>` artifact. A failed test fails the run.
 
 ## Failure evidence and reports
 
