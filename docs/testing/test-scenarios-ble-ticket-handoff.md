@@ -198,15 +198,16 @@ From *BT - Requirements Plan - feature-10082*, priority group **R1-C1**. Automat
 | Requirement | What it asks | Test | Status on the POC (2026-10-30) |
 |---|---|---|---|
 | R1-INFRA-SPIKE | BLE / Nearby transport spike, go/no-go Nov 3 | No test: it is a decision. Evidence: QR-B10 (`DeviceBluetoothReadinessTests`) and TC-12/13 (Android-to-Android BLE with the Driver App as peripheral) | ✅ evidence available |
-| R1-INFRA-FLAG | One flag gates every #10082 entry point. Flag off leaves the QR flows identical | Blocked: neither app has a #10082 flag yet (only `driverSession` and Flex's dev-only `bleHandoffDevTools`, both build-time). Once it exists: flag-off build shows no Bluetooth icon in Flex and no *Receive via Bluetooth* in the Driver App, plus `QrBaselineTests` on that build | ⛔ blocked |
-| 10082-NDT-1-P01, N02 | Discoverable whenever open in the foreground, with no receive mode | `NDT1_P01_N02_DriverOnHome_IsDiscoverable_WithoutReceiveMode` | ❌ not listed (POC needs *Receive via Bluetooth*) |
-| 10082-NDT-1-P02, N01 | Discoverable on any page, without going to Home first | `NDT1_P02_N01_DriverOnAnotherPage_IsDiscoverable` (Receipts tab) | ❌ not listed |
-| 10082-NDT-1-N01 | Not even Home needs to have been reached | `NDT1_N01_DriverBeforeHome_IsDiscoverable` (Welcome screen) | ❌ not listed |
+| R1-INFRA-FLAG | One flag gates every #10082 entry point in **Flex, the Driver App and Form Builder**. Flag off leaves the QR flows identical | Blocked: no app has a #10082 flag yet (only `driverSession` and Flex's dev-only `bleHandoffDevTools`, both build-time). Once it exists: a flag-off build shows no Bluetooth icon in Flex, no *Receive via Bluetooth* in the Driver App and no #10082 options in Form Builder, plus `QrBaselineTests` on that build | ⛔ blocked |
+| 10082-NDT-1-P01 | Discoverable whenever open in the foreground | `NDT1_P01_N02_DriverOnHome_IsDiscoverable_WithoutReceiveMode` (Home) | ❌ not listed (POC needs *Receive via Bluetooth*) |
+| 10082-NDT-1-N02 | No receive/pairing mode, and nothing for the driver to approve | Same test: receive mode is never entered, and once Flex has searched no in-app alert or other app's window (pairing request, permission dialog) is showing on the Driver device | ❌ not listed |
+| 10082-NDT-1-P02 | Stays discoverable whichever page is shown | `NDT1_P02_DriverOnEveryPage_StaysDiscoverable`: Home > Receipts > Home, listed on each | ❌ not listed |
+| 10082-NDT-1-N01 | No specific page (Home, Identity...) needs to be reached first | `NDT1_N01_DriverBeforeHome_IsDiscoverable`: Welcome, then the Tutorial, both before Home | ❌ not listed |
 | 10082-NDT-1-P03 | Discoverable again after returning from the background, with nothing re-enabled | `NDT1_P03_DriverBackFromBackground_IsDiscoverableAgain`. Whether it is listed while in the background is only recorded (`Baselines/NDT-1-P03_*.json`) | ❌ fails at its P01 precondition |
 | (control) | Proves the search below can find an advertising Driver App | `NDT1_Control_DriverInReceiveMode_IsFoundByDifference` | ✅ found in 1.1 s |
 
 **How a test finds its own Driver App.** Without receive mode the Driver App shows no code to look for, so each test works by difference:
-1. It stops the Driver App on every grid Driver emulator, since all emulators share one simulated Bluetooth.
+1. It stops the Driver App on every grid Driver emulator, since all emulators share one simulated Bluetooth. It also grants the Driver App its Nearby devices permissions there, because NDT-1 only applies while that access is available.
 2. It opens Flex's *Send via Bluetooth* picker on any submitted *Load - Collection* ticket and notes what one search lists.
 3. It starts this node's Driver App in the state under test and searches again (Rescan, 2 searches). A new entry is this node's Driver App.
 

@@ -5,6 +5,8 @@ using MobileAutomation.Tests.Flows;
 using MobileAutomation.Tests.Pages;
 using MobileAutomation.Tests.Tests;
 using MobileAutomation.Tests.Utilities;
+using MobileAutomation.Tests.Pages.Driver;
+using OpenQA.Selenium;
 using OpenQA.Selenium.Appium.Android;
 
 namespace RecoveryTrac.AutomatedTests
@@ -28,38 +30,62 @@ namespace RecoveryTrac.AutomatedTests
         protected override string NodeForCurrentTest => Node;
         protected override string? AccountForCurrentTest => "testuser2";
 
-        // 10082-NDT-1-P01 / N02: Driver app open on Home, never put in receive mode
+        // 10082-NDT-1-P01 / N02: Driver app open on Home, never put in receive mode, and nothing for the driver to
+        // approve on its screen while Flex finds it
         [Test]
         public void NDT1_P01_N02_DriverOnHome_IsDiscoverable_WithoutReceiveMode()
         {
             var (picker, othersListed) = OpenPickerWithOnlyOtherDevices();
 
-            var (_, driverHome) = DriverAppFlow.StartOnHome();
+            var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
             Assert.That(driverHome.IsReceiving, Is.False, "The Driver app opened in receive mode; this test must not use it.");
 
             string? found = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-P01");
-            Assert.That(found, Is.Not.Null,
-                "10082-NDT-1-P01 / N02 not met: Flex did not list the Driver app open in the foreground on Home, without " +
-                "receive mode (the POC only advertises after 'Receive via Bluetooth').");
+            var prompts = DriverPromptsShown((AndroidDriver)driverApp);
+            Assert.Multiple(() =>
+            {
+                Assert.That(found, Is.Not.Null,
+                    "10082-NDT-1-P01 / N02 not met: Flex did not list the Driver app open in the foreground on Home, without " +
+                    "receive mode (the POC only advertises after 'Receive via Bluetooth').");
+                Assert.That(prompts, Is.Empty,
+                    "10082-NDT-1-N02 not met: the Driver app asks the driver to approve or pair while Flex searches: " +
+                    $"[{string.Join("; ", prompts)}].");
+            });
         }
 
-        // 10082-NDT-1-P02 / N01: Driver app on a page other than Home
+        // 10082-NDT-1-P02: the Driver app stays discoverable as the driver moves between its pages, Home > Receipts > Home
         [Test]
-        public void NDT1_P02_N01_DriverOnAnotherPage_IsDiscoverable()
+        public void NDT1_P02_DriverOnEveryPage_StaysDiscoverable()
         {
             var (picker, othersListed) = OpenPickerWithOnlyOtherDevices();
 
             var (_, driverHome) = DriverAppFlow.StartOnHome();
+            string? onHome = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-P02 (Home)");
+
             driverHome.OpenTab("receipts");
             Console.WriteLine("🚚 Driver app is on Receipts.");
+            string? onReceipts = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-P02 (Receipts)");
 
-            string? found = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-P02");
-            Assert.That(found, Is.Not.Null,
-                "10082-NDT-1-P02 / N01 not met: Flex did not list the Driver app open in the foreground on Receipts " +
-                "(the POC only advertises from Home, after 'Receive via Bluetooth').");
+            driverHome.OpenTab("home");
+            Console.WriteLine("🚚 Driver app is back on Home.");
+            string? backOnHome = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-P02 (back on Home)");
+
+            // The requirement is about being listed, not about keeping the same name, so a changed name is only logged
+            var names = new[] { onHome, onReceipts, backOnHome }.OfType<string>().Distinct().ToList();
+            if (names.Count > 1) Console.WriteLine($"📡 The Driver app was listed under different names: [{string.Join(", ", names)}].");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(onHome, Is.Not.Null, "10082-NDT-1-P02 not met: Flex did not list the Driver app open on Home.");
+                Assert.That(onReceipts, Is.Not.Null,
+                    "10082-NDT-1-P02 not met: Flex did not list the Driver app open on Receipts " +
+                    "(the POC only advertises from Home, after 'Receive via Bluetooth').");
+                Assert.That(backOnHome, Is.Not.Null,
+                    "10082-NDT-1-P02 not met: Flex did not list the Driver app after the driver moved back to Home from Receipts.");
+            });
         }
 
-        // 10082-NDT-1-N01: Driver app still on Welcome, before it ever reached Home
+        // 10082-NDT-1-N01: Driver app on Welcome and then the Tutorial, before it ever reached Home
         [Test]
         public void NDT1_N01_DriverBeforeHome_IsDiscoverable()
         {
@@ -68,11 +94,24 @@ namespace RecoveryTrac.AutomatedTests
             var driverApp = DriverAppFlow.StartOnWelcome();
             Assume.That(driverApp, Is.Not.Null, "The Driver app did not open on its Welcome screen, so this case cannot be set up.");
             Console.WriteLine("🚚 Driver app is on Welcome (GET STARTED not tapped).");
+            string? onWelcome = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-N01 (Welcome)");
 
-            string? found = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-N01");
-            Assert.That(found, Is.Not.Null,
-                "10082-NDT-1-N01 not met: Flex did not list the Driver app open in the foreground on its Welcome screen, " +
-                "before it reached Home.");
+            var onboarding = new DriverOnboardingPage(driverApp!);
+            onboarding.ClickGetStarted();
+            Assume.That(onboarding.IsTutorialDisplayed(30), Is.True,
+                $"The Driver app did not open its Tutorial after GET STARTED ({onboarding.DescribeLocation()}).");
+            Console.WriteLine("🚚 Driver app is on the Tutorial (SKIP not tapped).");
+            string? onTutorial = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-N01 (Tutorial)");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(onWelcome, Is.Not.Null,
+                    "10082-NDT-1-N01 not met: Flex did not list the Driver app open in the foreground on its Welcome screen, " +
+                    "before it reached Home.");
+                Assert.That(onTutorial, Is.Not.Null,
+                    "10082-NDT-1-N01 not met: Flex did not list the Driver app open in the foreground on its Tutorial, " +
+                    "before it reached Home.");
+            });
         }
 
         // 10082-NDT-1-P03: back from the background, discoverable again without the driver re-enabling anything
@@ -127,8 +166,9 @@ namespace RecoveryTrac.AutomatedTests
                 "The search by difference did not find the Driver app even in receive mode, so the NDT-1 results above can't be trusted.");
         }
 
-        // Stops every grid Driver app, logs Flex in and opens the 'Send via Bluetooth' picker on a submitted ticket,
-        // then returns what one search lists with no grid Driver app running (other phones nearby)
+        // Stops every grid Driver app (granting it Nearby access), logs Flex in and opens the 'Send via Bluetooth'
+        // picker on a submitted ticket, then returns what one search lists with no grid Driver app running (other phones
+        // nearby)
         private (BleTruckPickerPage Picker, IReadOnlyList<string> OthersListed) OpenPickerWithOnlyOtherDevices()
         {
             if (DriverFactory.DriverFlex is not AndroidDriver flexAndroid)
@@ -137,7 +177,7 @@ namespace RecoveryTrac.AutomatedTests
                 return default;
             }
 
-            StopAllGridDriverApps();
+            PrepareGridDriverApps();
 
             var flow = new CollectionLoadTicketFlow(DriverFactory.DriverFlex, _wait.Value!, Node);
             flow.LoginAndEnterWebView();
@@ -151,6 +191,36 @@ namespace RecoveryTrac.AutomatedTests
             var othersListed = picker.WaitForSearchToEnd();
             Console.WriteLine($"📡 With no grid Driver app running Flex lists: [{string.Join(", ", othersListed)}].");
             return (picker, othersListed);
+        }
+
+        // Anything on the Driver device waiting for the driver: a window of another app over the Driver app (a Bluetooth
+        // pairing request, a permission dialog) or an Ionic alert inside it. Each entry names where it came from
+        private static IReadOnlyList<string> DriverPromptsShown(AndroidDriver driverApp)
+        {
+            var prompts = new List<string>();
+            string context = driverApp.Context;
+            if (context.StartsWith("WEBVIEW", StringComparison.Ordinal))
+            {
+                prompts.AddRange(driverApp.FindElements(By.CssSelector("ion-alert")).Where(e => e.Displayed)
+                    .Select(e => $"Driver app alert '{e.Text.Trim()}'"));
+            }
+
+            driverApp.Context = "NATIVE_APP";
+            try
+            {
+                string package = DriverAppFlow.DriverPackage(driverApp);
+                prompts.AddRange(driverApp.FindElements(By.XPath($"//*[@package!='{package}' and @package!='com.android.systemui']"))
+                    .GroupBy(e => e.GetAttribute("package"))
+                    .Select(g => $"{g.Key} window '{string.Join(" ", g.Select(e => e.GetAttribute("text")).Where(t => !string.IsNullOrWhiteSpace(t)).Take(5))}'"));
+            }
+            finally
+            {
+                if (context.StartsWith("WEBVIEW", StringComparison.Ordinal))
+                {
+                    DriverFactory.SwitchToWebViewContext(driverApp);
+                }
+            }
+            return prompts;
         }
 
         // Searches again until an entry that was not listed before this node's Driver app ran shows up
@@ -180,8 +250,12 @@ namespace RecoveryTrac.AutomatedTests
         }
 
         // All grid emulators share one simulated Bluetooth, so a Driver app left open on another node would be listed
-        // too. The fixture is NonParallelizable, so none of them is in use by another test
-        private static void StopAllGridDriverApps()
+        // too. The fixture is NonParallelizable, so none of them is in use by another test.
+        // NDT-1 only applies while the runtime access Nearby needs is available, so it is granted up front: a Driver app
+        // left waiting on Android's Nearby devices question would fail for the wrong reason, and N02 would count the
+        // question as a prompt. Granting (unlike revoking) does not stop the app; on Android 11 and older pm grant just
+        // fails, as these permissions don't exist there
+        private static void PrepareGridDriverApps()
         {
             var online = AdbHelper.OnlineDevices();
             var driverUdids = TestConfiguration.Configuration.GetSection("MobileConfigurations").GetChildren()
@@ -191,8 +265,12 @@ namespace RecoveryTrac.AutomatedTests
             foreach (string udid in driverUdids)
             {
                 AdbHelper.Run(udid, $"shell am force-stop {DriverPackage}");
+                foreach (string permission in NearbyDevicesPermission.Driver)
+                {
+                    AdbHelper.Run(udid, $"shell pm grant {DriverPackage} {permission}");
+                }
             }
-            Console.WriteLine("🛑 Driver app stopped on every online grid Driver emulator.");
+            Console.WriteLine("🛑 Driver app stopped, with Nearby devices access granted, on every online grid Driver emulator.");
         }
     }
 }

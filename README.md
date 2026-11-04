@@ -83,16 +83,16 @@ Each run saves its measurements to `bin/Debug/net10.0/Baselines/BLE-TC12_<node>_
 
 | Test | Requirement | Driver App state | POC today |
 |---|---|---|---|
-| `NDT1_P01_N02_DriverOnHome_IsDiscoverable_WithoutReceiveMode` | 10082-NDT-1-P01, N02 | Open on Home, *Receive via Bluetooth* never tapped | ❌ |
-| `NDT1_P02_N01_DriverOnAnotherPage_IsDiscoverable` | 10082-NDT-1-P02, N01 | Open on the Receipts tab | ❌ |
-| `NDT1_N01_DriverBeforeHome_IsDiscoverable` | 10082-NDT-1-N01 | Open on Welcome, before GET STARTED | ❌ |
+| `NDT1_P01_N02_DriverOnHome_IsDiscoverable_WithoutReceiveMode` | 10082-NDT-1-P01, N02 | Open on Home, *Receive via Bluetooth* never tapped; no alert, pairing request or permission dialog on its screen | ❌ |
+| `NDT1_P02_DriverOnEveryPage_StaysDiscoverable` | 10082-NDT-1-P02 | Home, then Receipts, then back on Home: listed on each | ❌ |
+| `NDT1_N01_DriverBeforeHome_IsDiscoverable` | 10082-NDT-1-N01 | Open on Welcome, then on the Tutorial, before Home | ❌ |
 | `NDT1_P03_DriverBackFromBackground_IsDiscoverableAgain` | 10082-NDT-1-P03 | Listed, then sent to the background, then brought back with nothing tapped | ❌ (fails at the P01 precondition) |
 | `NDT1_Control_DriverInReceiveMode_IsFoundByDifference` | Control | In the POC's receive mode | ✅ |
 
 Pass means Flex's *Send via Bluetooth* picker lists the Driver App within two searches (about 30 s).
 
 **How a test finds its own Driver App.** Without receive mode the Driver App shows no code to match:
-1. The test stops the Driver App on **every** grid Driver emulator, because all emulators share one simulated Bluetooth.
+1. The test stops the Driver App on **every** grid Driver emulator, because all emulators share one simulated Bluetooth. It also grants the Driver App its Nearby devices permissions there, because NDT-1 only applies while that access is available.
 2. It opens the picker on any submitted *Load - Collection* ticket, submitting one only if the account has none, and notes what one search lists.
 3. It starts this node's Driver App and searches again. The new entry is this node's Driver App.
 
@@ -102,7 +102,7 @@ The fixture runs on Node 2 (`testuser2`) and is `NonParallelizable`. Don't run i
 
 **Not automated in R1-C1:**
 - R1-INFRA-SPIKE is a go/no-go decision. QR-B10 (`DeviceBluetoothReadinessTests`) and TC-12/13 are its evidence.
-- R1-INFRA-FLAG is blocked: neither app has a #10082 flag yet.
+- R1-INFRA-FLAG is blocked: no app has a #10082 flag yet. Once one exists, check that a flag-off build hides every #10082 entry point in Flex, the Driver App and Form Builder, and that the QR flows still match `QrBaselineTests`.
 
 Details are in Part C of `docs/testing/test-scenarios-ble-ticket-handoff.md`.
 
