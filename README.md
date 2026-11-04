@@ -85,7 +85,7 @@ Each run saves its measurements to `bin/Debug/net10.0/Baselines/BLE-TC12_<node>_
 |---|---|---|---|
 | `NDT1_P01_N02_DriverOnHome_IsDiscoverable_WithoutReceiveMode` | 10082-NDT-1-P01, N02 | Open on Home, *Receive via Bluetooth* never tapped; no alert, pairing request or permission dialog on its screen | ❌ |
 | `NDT1_P02_DriverOnEveryPage_StaysDiscoverable` | 10082-NDT-1-P02 | Home, then Receipts, then back on Home: listed on each | ❌ |
-| `NDT1_N01_DriverBeforeHome_IsDiscoverable` | 10082-NDT-1-N01 | Open on Welcome, then on the Tutorial, before Home | ❌ |
+| `NDT1_N01_DriverBeforeHome_IsDiscoverable` | 10082-NDT-1-N01 | Open on Welcome, then on the Tutorial, before Home (the Tutorial only when this emulator still shows it; otherwise a warning) | ❌ |
 | `NDT1_P03_DriverBackFromBackground_IsDiscoverableAgain` | 10082-NDT-1-P03 | Listed, then sent to the background, then brought back with nothing tapped | ❌ (fails at the P01 precondition) |
 | `NDT1_Control_DriverInReceiveMode_IsFoundByDifference` | Control | In the POC's receive mode | ✅ |
 

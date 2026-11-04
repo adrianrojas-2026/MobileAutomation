@@ -96,21 +96,41 @@ namespace RecoveryTrac.AutomatedTests
             Console.WriteLine("🚚 Driver app is on Welcome (GET STARTED not tapped).");
             string? onWelcome = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-N01 (Welcome)");
 
+            // With noReset an emulator that has seen the Tutorial goes from GET STARTED straight to Home, so the Tutorial
+            // is only checked when it shows; the Welcome result is reported either way
             var onboarding = new DriverOnboardingPage(driverApp!);
             onboarding.ClickGetStarted();
-            Assume.That(onboarding.IsTutorialDisplayed(30), Is.True,
-                $"The Driver app did not open its Tutorial after GET STARTED ({onboarding.DescribeLocation()}).");
-            Console.WriteLine("🚚 Driver app is on the Tutorial (SKIP not tapped).");
-            string? onTutorial = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-N01 (Tutorial)");
+            bool tutorialShown = onboarding.IsTutorialDisplayed(30);
+            string? onTutorial = null;
+            string tutorialSkipped = string.Empty;
+            if (tutorialShown)
+            {
+                Console.WriteLine("🚚 Driver app is on the Tutorial (SKIP not tapped).");
+                onTutorial = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-N01 (Tutorial)");
+            }
+            else
+            {
+                tutorialSkipped = onboarding.IsHomeDisplayed(5)
+                    ? "it went from GET STARTED straight to Home (Tutorial already seen on this emulator)"
+                    : $"it did not show the Tutorial after GET STARTED ({onboarding.DescribeLocation()})";
+                Console.WriteLine($"🚚 Driver app: Tutorial not checked, {tutorialSkipped}.");
+            }
 
             Assert.Multiple(() =>
             {
                 Assert.That(onWelcome, Is.Not.Null,
                     "10082-NDT-1-N01 not met: Flex did not list the Driver app open in the foreground on its Welcome screen, " +
                     "before it reached Home.");
-                Assert.That(onTutorial, Is.Not.Null,
-                    "10082-NDT-1-N01 not met: Flex did not list the Driver app open in the foreground on its Tutorial, " +
-                    "before it reached Home.");
+                if (tutorialShown)
+                {
+                    Assert.That(onTutorial, Is.Not.Null,
+                        "10082-NDT-1-N01 not met: Flex did not list the Driver app open in the foreground on its Tutorial, " +
+                        "before it reached Home.");
+                }
+                else
+                {
+                    Assert.Warn($"10082-NDT-1-N01 on the Tutorial was not checked: {tutorialSkipped}.");
+                }
             });
         }
 
