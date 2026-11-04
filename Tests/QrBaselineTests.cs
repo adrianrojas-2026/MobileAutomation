@@ -12,19 +12,20 @@ namespace RecoveryTrac.AutomatedTests
     // Part A of docs/testing/test-scenarios-ble-ticket-handoff.md: records how the QR handoff behaves today, so the
     // BLE handoff tests have an expected result to compare with ("behaves as after a QR scan"). Each test saves what
     // it observed under Baselines/ (BaselineRecorder) and only asserts what must hold for QR as well.
-    // Pinned to one node pair and non-parallelizable, so it never shares emulators with LoadTicketCollectionTests.
-    [TestFixture("Node3")]
+    // The scenarios are split between two node pairs (QrBaselineNode2Tests / QrBaselineNode3Tests below) that run in
+    // parallel, each logged in with its node's own Flex account; within a node they run one after the other. A test of
+    // another fixture on the same pair (e.g. LoadTicketCollectionTests) waits for DriverFactory's node-pair lock.
     [Category("QR")]
     [Category("QR-Baseline")]
-    [NonParallelizable]
-    public class QrBaselineTests : DualAppTestBase
+    [Parallelizable(ParallelScope.Self)]
+    public abstract class QrBaselineTests : DualAppTestBase
     {
         // Largest payload the BLE transfer logic must carry (FR-4)
         private const int MaxBlePayloadChars = 4200;
 
         private readonly string _node;
 
-        public QrBaselineTests(string node)
+        protected QrBaselineTests(string node)
         {
             _node = node;
         }
@@ -36,10 +37,9 @@ namespace RecoveryTrac.AutomatedTests
         private record DriverSnapshot(string CurrentLoad, string LoadQrText, string LoadQrSha256);
 
         // QR-B01: what the collection QR carries (and therefore what BLE must send unchanged)
-        [Test]
-        public void QR_B01_B08_CollectionQrPayload_IsFingerprinted_And_ReopenedQrMatches()
+        protected void CollectionQrPayload_IsFingerprinted_And_ReopenedQrMatches()
         {
-            var ticket = SubmitTicket(nameof(QR_B01_B08_CollectionQrPayload_IsFingerprinted_And_ReopenedQrMatches));
+            var ticket = SubmitTicket(TestName);
 
             Assert.That(ticket.QrText, Is.Not.Empty, "The collection QR code decoded to an empty payload.");
             Assert.That(ticket.QrText, Has.Length.LessThanOrEqualTo(MaxBlePayloadChars),
@@ -76,10 +76,9 @@ namespace RecoveryTrac.AutomatedTests
         }
 
         // QR-B02 / QR-B03: what the Driver app shows and stores after a QR scan (FR-6 reference)
-        [Test]
-        public void QR_B02_B03_DriverLoadAfterQrScan_IsRecorded_And_SurvivesRestart()
+        protected void DriverLoadAfterQrScan_IsRecorded_And_SurvivesRestart()
         {
-            var ticket = SubmitTicket(nameof(QR_B02_B03_DriverLoadAfterQrScan_IsRecorded_And_SurvivesRestart));
+            var ticket = SubmitTicket(TestName);
             var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
 
             QrScanFeed.Stage(driverApp, ticket.QrPng, rasterizer: DriverFactory.DriverFlex, DriverFactory.DriverCameraFeedPath);
@@ -111,11 +110,10 @@ namespace RecoveryTrac.AutomatedTests
         }
 
         // QR-B04: a second collection ticket while a load is active - the expected result for demo check 4
-        [Test]
-        public void QR_B04_SecondTicketWhileLoadActive_BehaviorIsRecorded()
+        protected void SecondTicketWhileLoadActive_BehaviorIsRecorded()
         {
-            var first = SubmitTicket(nameof(QR_B04_SecondTicketWhileLoadActive_BehaviorIsRecorded) + " #1");
-            var second = SubmitTicket(nameof(QR_B04_SecondTicketWhileLoadActive_BehaviorIsRecorded) + " #2", first.Flow);
+            var first = SubmitTicket(TestName + " #1");
+            var second = SubmitTicket(TestName + " #2", first.Flow);
             var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
 
             QrScanFeed.Stage(driverApp, first.QrPng, rasterizer: DriverFactory.DriverFlex, DriverFactory.DriverCameraFeedPath);
@@ -162,10 +160,9 @@ namespace RecoveryTrac.AutomatedTests
         }
 
         // QR-B05: the same collection QR scanned again after the load was cancelled (BLE re-send reference)
-        [Test]
-        public void QR_B05_SameQrScannedTwice_BehaviorIsRecorded()
+        protected void SameQrScannedTwice_BehaviorIsRecorded()
         {
-            var ticket = SubmitTicket(nameof(QR_B05_SameQrScannedTwice_BehaviorIsRecorded));
+            var ticket = SubmitTicket(TestName);
             var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
 
             QrScanFeed.Stage(driverApp, ticket.QrPng, rasterizer: DriverFactory.DriverFlex, DriverFactory.DriverCameraFeedPath);
@@ -191,8 +188,7 @@ namespace RecoveryTrac.AutomatedTests
         }
 
         // QR-B06: text that is not a ticket must not become a load (FR-5 reference)
-        [Test]
-        public void QR_B06_NonTicketQr_IsRejected_And_NothingIsSaved()
+        protected void NonTicketQr_IsRejected_And_NothingIsSaved()
         {
             var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
             if (driverApp is not AndroidDriver) Assert.Ignore("Staging arbitrary QR text needs a device (RunMode=Mobile).");
@@ -211,10 +207,9 @@ namespace RecoveryTrac.AutomatedTests
         // QR-B07: a real ticket payload, truncated or with one character changed. A camera can't produce these (QR
         // error correction), but a Bluetooth transfer could, so this records whether the app has its own integrity
         // check. Known QR decoding bugs are out of the POC scope, so a saved load passes with a note in the report.
-        [Test]
-        public void QR_B07_DamagedTicketPayload_HandlingIsRecorded()
+        protected void DamagedTicketPayload_HandlingIsRecorded()
         {
-            var ticket = SubmitTicket(nameof(QR_B07_DamagedTicketPayload_HandlingIsRecorded));
+            var ticket = SubmitTicket(TestName);
             var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
             if (driverApp is not AndroidDriver) Assert.Ignore("Staging arbitrary QR text needs a device (RunMode=Mobile).");
 
@@ -247,8 +242,7 @@ namespace RecoveryTrac.AutomatedTests
         // QR-B09: QR handoff with both devices in airplane mode (demo conditions). Flex logs in and submits online;
         // QR generation and the Driver scan run offline. Debug builds still reach the local backend through adb
         // reverse (loopback), so sync status is not a reliable offline signal and is only checked once back online.
-        [Test]
-        public void QR_B09_QrHandoff_WorksInAirplaneMode()
+        protected void QrHandoff_WorksInAirplaneMode()
         {
             if (DriverFactory.DriverFlex is not AndroidDriver flexAndroid)
             {
@@ -258,7 +252,7 @@ namespace RecoveryTrac.AutomatedTests
 
             var flow = new CollectionLoadTicketFlow(DriverFactory.DriverFlex, _wait.Value!, _node);
             flow.LoginAndEnterWebView();
-            var draft = flow.FillAndSubmitTicket(Notes(nameof(QR_B09_QrHandoff_WorksInAirplaneMode)));
+            var draft = flow.FillAndSubmitTicket(Notes(TestName));
             var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
 
             string[] udids = [AdbHelper.GetUdid(flexAndroid)!, AdbHelper.GetUdid((AndroidDriver)driverApp)!];
@@ -336,6 +330,9 @@ namespace RecoveryTrac.AutomatedTests
             return new DriverSnapshot(driverHome.CurrentLoad, loadQrText, BaselineRecorder.Sha256(loadQrText));
         }
 
+        // The QR_Bxx_... test running the scenario, for the ticket notes
+        private static string TestName => TestContext.CurrentContext.Test.MethodName!;
+
         private string Notes(string testName) => $"Automated test - {testName} {_node} {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
 
         // Changes the first letter or digit from the middle of the payload onwards to a different one of the same kind
@@ -350,5 +347,43 @@ namespace RecoveryTrac.AutomatedTests
                 : (char)('a' + (c - 'a' + 1) % 26);
             return string.Concat(payload.AsSpan(0, index), altered.ToString(), payload.AsSpan(index + 1));
         }
+    }
+
+    // Split by the 2026-10-27 Node3 run's durations, ~12 min per node: B01/B08 4:00, B04 3:26, B05 3:13, B06 1:42
+    [TestFixture("Node2")]
+    public class QrBaselineNode2Tests(string node) : QrBaselineTests(node)
+    {
+        // QR-B01: what the collection QR carries (and therefore what BLE must send unchanged)
+        [Test]
+        public void QR_B01_B08_CollectionQrPayload_IsFingerprinted_And_ReopenedQrMatches() => CollectionQrPayload_IsFingerprinted_And_ReopenedQrMatches();
+
+        // QR-B04: a second collection ticket while a load is active - the expected result for demo check 4
+        [Test]
+        public void QR_B04_SecondTicketWhileLoadActive_BehaviorIsRecorded() => SecondTicketWhileLoadActive_BehaviorIsRecorded();
+
+        // QR-B05: the same collection QR scanned again after the load was cancelled (BLE re-send reference)
+        [Test]
+        public void QR_B05_SameQrScannedTwice_BehaviorIsRecorded() => SameQrScannedTwice_BehaviorIsRecorded();
+
+        // QR-B06: text that is not a ticket must not become a load (FR-5 reference)
+        [Test]
+        public void QR_B06_NonTicketQr_IsRejected_And_NothingIsSaved() => NonTicketQr_IsRejected_And_NothingIsSaved();
+    }
+
+    // B02/B03 3:18, B07 4:07, B09 3:32
+    [TestFixture("Node3")]
+    public class QrBaselineNode3Tests(string node) : QrBaselineTests(node)
+    {
+        // QR-B02 / QR-B03: what the Driver app shows and stores after a QR scan (FR-6 reference)
+        [Test]
+        public void QR_B02_B03_DriverLoadAfterQrScan_IsRecorded_And_SurvivesRestart() => DriverLoadAfterQrScan_IsRecorded_And_SurvivesRestart();
+
+        // QR-B07: a damaged ticket payload, to record whether the app checks integrity itself (FR-5 reference)
+        [Test]
+        public void QR_B07_DamagedTicketPayload_HandlingIsRecorded() => DamagedTicketPayload_HandlingIsRecorded();
+
+        // QR-B09: QR handoff with this node's two devices in airplane mode (demo conditions)
+        [Test]
+        public void QR_B09_QrHandoff_WorksInAirplaneMode() => QrHandoff_WorksInAirplaneMode();
     }
 }
