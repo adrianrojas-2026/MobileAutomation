@@ -103,6 +103,17 @@ function Get-NodeUdid([int]$node, [string]$role) {
     return $section.Udid
 }
 
+# Crash / ANR dialogs cover the app and swallow the tests' taps. 'am broadcast' waits for every receiver to finish,
+# and on some images (seen on Android 16) it never returns, so give up after a few seconds
+function Close-SystemDialogs([string]$udid) {
+    $process = Start-Process $adbPath -ArgumentList "-s $udid shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS" `
+        -PassThru -WindowStyle Hidden
+    if (-not $process.WaitForExit(10000)) {
+        $process.Kill()
+        Write-Host " ! ${udid}: closing system dialogs timed out; skipped." -ForegroundColor Yellow
+    }
+}
+
 function Get-BluetoothOn([string]$udid) {
     return ((& $adbPath -s $udid shell settings get global bluetooth_on 2>$null) -join '').Trim() -eq "1"
 }
@@ -125,8 +136,7 @@ function Repair-Bluetooth([string[]]$udids) {
         if ($crash) { $reasons += "Android's Bluetooth service crashed ($($crash.Line.Substring(0, 18).Trim()))" }
         if (-not (Get-BluetoothOn $udid)) { $reasons += "Bluetooth is off" }
 
-        # Crash / ANR dialogs cover the app and swallow the tests' taps
-        & $adbPath -s $udid shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS *> $null
+        Close-SystemDialogs $udid
 
         if ($reasons.Count -eq 0) {
             Write-Host " - ${udid}: Bluetooth OK." -ForegroundColor Green
@@ -143,7 +153,7 @@ function Repair-Bluetooth([string[]]$udids) {
         }
         # The stack reports ON before it can scan / advertise again
         Start-Sleep -Seconds 5
-        & $adbPath -s $udid shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS *> $null
+        Close-SystemDialogs $udid
         Write-Host " - ${udid}: Bluetooth back on." -ForegroundColor Green
     }
 }

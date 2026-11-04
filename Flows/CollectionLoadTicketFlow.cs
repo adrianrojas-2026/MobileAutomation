@@ -59,6 +59,10 @@ public class CollectionLoadTicketFlow
         if (_flex is AndroidDriver)
         {
             DriverFactory.SwitchToWebViewContext(_flex);
+            if (((AndroidDriver)_flex).Context == "NATIVE_APP" && DriverFactory.AppNotRunningReason((AndroidDriver)_flex) is { } reason)
+            {
+                Assert.Fail(reason);
+            }
             Assert.That(((AndroidDriver)_flex).Context, Does.StartWith("WEBVIEW"),
                 "Could not switch to the Flex WEBVIEW context. Is Appium running with --allow-insecure=uiautomator2:chromedriver_autodownload?");
         }

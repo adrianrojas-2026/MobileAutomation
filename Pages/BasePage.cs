@@ -156,6 +156,11 @@ public abstract class BasePage
                 // would take the script for an unknown 'mobile:' command, so fail with something callers can retry on
                 if (androidDriver.Context == "NATIVE_APP")
                 {
+                    // Not worth retrying when the app is gone, so not a WebDriverException
+                    if (DriverFactory.AppNotRunningReason(androidDriver) is { } reason)
+                    {
+                        throw new InvalidOperationException(reason);
+                    }
                     throw new WebDriverException("The app's WebView is not available yet; cannot run the script.");
                 }
 
