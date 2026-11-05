@@ -161,7 +161,9 @@ foreach ($emu in $grid) {
         Write-Host " ! Only $freeMB MB of memory free before starting $($emu.Avd) (needs about $($MemoryMB + 1024) MB). It may boot slowly or hang; close other apps." -ForegroundColor Yellow
     }
 
-    $common = "-avd `"$($emu.Avd)`" -port $($emu.Port) -memory $MemoryMB -cores $Cores -no-audio -no-boot-anim"
+    # Pin public DNS servers: by default the emulator copies the host's DNS at boot, and a VPN or Wi-Fi change on
+    # the host then leaves it unable to resolve names (the address lookup and the backend stop working)
+    $common = "-avd `"$($emu.Avd)`" -port $($emu.Port) -memory $MemoryMB -cores $Cores -no-audio -no-boot-anim -dns-server 8.8.8.8,1.1.1.1"
     if ($ColdBoot) { $common += " -no-snapshot-load" }
     $arguments = if ($Headless) {
         "$common -no-window -gpu swiftshader_indirect"
@@ -213,13 +215,23 @@ if ($pending.Count -gt 0) {
 # Final check: right Android version and the debug APK installed on every serial
 Write-Host "`nGrid status:" -ForegroundColor Cyan
 $problems = 0
+$missingApk = $false
 foreach ($emu in $grid) {
     $serial = "emulator-$($emu.Port)"
     $release = (& $adbPath -s $serial shell getprop ro.build.version.release).Trim()
     $installed = [bool](& $adbPath -s $serial shell pm list packages $emu.Package | Select-String -SimpleMatch "package:$($emu.Package)")
     $notes = @()
     if ($release -ne $emu.Android) { $notes += "Android $release (expected $($emu.Android))" }
-    if (-not $installed) { $notes += "$($emu.Package) NOT installed" }
+    if (-not $installed) { $notes += "$($emu.Package) NOT installed"; $missingApk = $true }
+    # An emulator that was already running may predate -dns-server and still hold stale host DNS. Right after a
+    # boot the network can still be coming up, so give it a few tries before flagging it
+    $hasDns = $false
+    for ($try = 0; $try -lt 6 -and -not $hasDns; $try++) {
+        if ($try -gt 0) { Start-Sleep -Seconds 5 }
+        $ping = & $adbPath -s $serial shell "ping -c 1 -W 3 geocode.arcgis.com 2>&1"
+        $hasDns = -not ($ping -match "unknown host")
+    }
+    if (-not $hasDns) { $notes += "no DNS (restart it: -Stop, then start the grid)" }
 
     $line = " Node $($emu.Node) {0,-6} {1}  {2,-19} Android {3,-3}" -f $emu.Role, $serial, $emu.Avd, $release
     if ($notes.Count -eq 0) {
@@ -230,10 +242,13 @@ foreach ($emu in $grid) {
     }
 }
 
-if ($problems -gt 0) {
+if ($missingApk) {
     Write-Host "`nInstall the missing APKs before running (see the README, 'Debug APKs'):" -ForegroundColor Yellow
     Write-Host '  adb -s <serial> install -r "<UI repo>\apps\Flex\android\app\build\outputs\apk\debug\app-debug.apk"' -ForegroundColor Yellow
     Write-Host '  adb -s <serial> install -r "<UI repo>\apps\Driver-App\android\app\build\outputs\apk\debug\app-debug.apk"' -ForegroundColor Yellow
-} else {
+}
+if ($problems -eq 0) {
     Write-Host "`n[SUCCESS] Grid is ready." -ForegroundColor Green
 }
+# Otherwise the exit code would be whatever the last adb call returned
+exit $(if ($problems -gt 0) { 1 } else { 0 })

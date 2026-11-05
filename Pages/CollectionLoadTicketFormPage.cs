@@ -517,6 +517,7 @@ public class CollectionLoadTicketFormPage : BasePage
             ScrollAndClick(LocateButton);
             if (!WaitForStreetName(30))
             {
+                ThrowIfDeviceHasNoDns();
                 throw new WebDriverTimeoutException(
                     $"Street Name was not filled in for {ReadInputValue(LatitudeInput)}, {ReadInputValue(LongitudeInput)} (reverse geocoding failed twice).");
             }
@@ -576,6 +577,18 @@ public class CollectionLoadTicketFormPage : BasePage
 
         var culture = System.Globalization.CultureInfo.InvariantCulture;
         AdbHelper.Run(udid, $"emu geo fix {MockLongitude.ToString(culture)} {MockLatitude.ToString(culture)} 0", timeoutMs: 5000);
+    }
+
+    // The address lookup calls ArcGIS by name, so an emulator without DNS can never fill Street Name
+    private void ThrowIfDeviceHasNoDns()
+    {
+        if (Driver is not AndroidDriver androidDriver) return;
+        string? udid = AdbHelper.GetUdid(androidDriver);
+        if (udid == null || AdbHelper.CanResolveHost(udid, "geocode.arcgis.com")) return;
+
+        throw new WebDriverException(
+            $"{udid} cannot resolve host names (DNS is down), so the address lookup can't run. Restart the emulator " +
+            "with .\\Setup\\Start-MobileGrid.ps1 -Stop, then start the grid again (it pins the DNS servers).");
     }
 
     private bool HasRealCoordinates()

@@ -214,3 +214,49 @@ From *BT - Requirements Plan - feature-10082*, priority group **R1-C1**. Automat
 The fixture is `NonParallelizable` and runs on Node 2 (`testuser2`).
 
 **When R1 lands:** the picker becomes the standard Flex Action Menu (FEAT-NDT-2), so `BleTruckPickerPage`'s locators will need updating. The test logic stays the same.
+
+---
+
+## Part D - Feature #10082 R1-C2 (Transfer core)
+
+From *BT - Requirements Plan - feature-10082*, priority group **R1-C2**: FEAT-NDT-2 (discovery menu), NDT-3 (identity cards), NDT-5 (supported clients), NDT-6 (runtime access) and NDT-10 (progress and cancellation). Automated in category `BLE-R1-C2`. As in Part C, the tests check the **R1 requirement**, not the POC, so they fail until R1 lands, and each failure names its requirement ID.
+
+### How the tests read a menu that isn't built yet
+
+- **By the required texts.** No UI branch has the R1 Action Menu yet, so `NearbyDriverMenuPage` doesn't use tags or classes. It reads the top Flex overlay by the texts the requirements define: *Searching for nearby Driver Apps…*, *No nearby Driver Apps found.*, *Try Again*, *Send Data*, *Connecting…*, *Sending data…*, *Cancel*, *Identity Code:*, and the Bluetooth Access explanation. The same reading works on the POC picker, which is how the tests produce a gap report today.
+- **Recorded inside the WebView.** A MutationObserver logs every change to the overlay, timed by the browser's clock. That catches states that last a few hundred milliseconds (*Connecting…*), their order, and timings like the 10-second no-results interval.
+- **Discovery stopped, as Android sees it.** `BluetoothHelper.IsScanning` reads Flex's `LE scans (started/stopped)` from `dumpsys bluetooth_manager`. If the transport scans through Google Play services (Nearby Connections, D2), Android counts the scan under GMS, not Flex. The test then warns that the stop checks rely on the menu only.
+- **Finding the Driver App.** It works by difference, as in Part C: grid Driver Apps are stopped, one search shows what else is around, then this node's Driver App starts and a new search runs. The test puts that Driver App in the POC's receive mode when the button exists, so R1-C2 results don't depend on the R1-C1 gap.
+
+### Coverage
+
+| Requirement | Test | Status on the POC |
+|---|---|---|
+| NDT-2-P01, P02, E01, E02, E03, E05, P16, N04 (no-results, dismissed) | `NearbyDiscoveryMenuTests.NDT2_NoDriverApp_NoResultsAfter10s_TryAgain_DismissStopsDiscovery` | ❌ expected (POC: other texts, 15 s search, Rescan, no dismissal) |
+| NDT-2-P03, E06, P04, N02, N01 · NDT-3-P01, P03, P21, P12 | `NearbyDiscoveryMenuTests.NDT2_NDT3_DriverAppFound_ListedWhileDiscoveryContinues` | ❌ expected (POC: search ends at 15 s, RTD-XXXX cards, stale cards kept) |
+| NDT-2-P14, N04 (selected) · NDT-10-P01, P02, P03, P04, P06, P07, N01 | `NearbyTransferProgressTests.NDT10_SelectDriverApp_StopsDiscovery_ShowsSendDataProgress` | ❌ expected (POC: *Send via Bluetooth* title, progress bar, no Cancel) |
+| NDT-10-P08, N02, P09, P10, N03, E01 | `NearbyTransferProgressTests.NDT10_CancelDuringTransfer_ReturnsToUnchangedTicket`. Tap outside and Escape 150 ms after selecting, Cancel at 500 ms. If the Driver App commits first, E01 is checked instead of P10/N03 (warning) | ❌ expected (POC: no Cancel) |
+| NDT-6-P01, P02, P03, P08, N01, P09 | `NearbyRuntimeAccessTests.NDT6_BluetoothOff_ShowsAccessFlow_ThenSearchesOnceOn` (Bluetooth off through adb, restored in `finally`) | ❌ expected |
+| NDT-6-E02 | `NearbyRuntimeAccessTests.NDT6_BluetoothOff_CancelAccessFlow_ReturnsWithoutSearching` | ❌ expected |
+| NDT-6-P02, E03, N01 (permission refused) | `NearbyRuntimeAccessTests.NDT6_NearbyAccessDenied_DoesNotSearch` (access re-granted in `finally`) | ❌ expected |
+| NDT-5-P05, P06, N01 | `NearbySupportedClientsTests.NDT5_FlexWithoutNearby_KeepsQrAction_ShowsNoNearbyAction`. Needs `RunMode=Web` (Flex Web has no Nearby); ignored on devices | ❌ expected (POC shows its Bluetooth icon on Web) |
+| NDT-5-P01 / P02 | Covered by the tests above (Flex Android) and by Part C's NDT1_* tests (Driver App Android) | — |
+
+### Not automated, and why
+
+| Requirement(s) | Reason | What would unblock it |
+|---|---|---|
+| NDT-2-P12, P13, P15, E04 · NDT-6-P04, E01 · NDT-5-P07, N02 | Alternative action / single entry point. Nobody has said whether the R1 Producer entry point supplies an alternative action (e.g. a QR action inside the menu), or what it is called | **Open question:** the R1 entry point and the label of its alternative action |
+| NDT-2-P05 | Closest-first sort. Distance sorting is deferred (D3), and emulators on the shared simulated Bluetooth all report the same signal | Physical phones at known distances, after D3 (manual) |
+| NDT-2-P07 | The card goes non-selectable just before its removal animation. That lasts milliseconds, and the animations are R2. Removal itself is checked under NDT-2-N01 | R2 animations; then a slowed-animation build |
+| NDT-2-P10, P11, N03, E10 | Press deferral. Needs a press held while a second Driver App appears or drops out, i.e. two advertising Driver emulators (Node 2 + Node 3) and precise timing | Doable later with W3C pointer actions and Node 3's Driver App; manual for now |
+| NDT-3-P02, P04, P06–P11, P13, P22, P23, N01, E01, E02 | Driver Session identity. The Driver App's `driverSession` flag is off in every build, and starting a session needs a monitor's session QR | A build with Driver Sessions, plus a way to start one (session QR fed to the Driver camera) |
+| NDT-3-P05 | Nearby Driver Link (LDT-13, R2) | R2 |
+| NDT-6 location conditions | D5 is open. Android 12+ scans for nearby devices without location | D5 |
+| NDT-10-P02 / P06 (Receive Data, Send Receipt) · E03 | Consumer and Receipt workflows are R2 (R1 has *Send Data* only) | R2 |
+| NDT-10-E02 | Acknowledgement lost after the Driver App commits (NDT-13). Needs fault injection between commit and acknowledgement | A dev fault hook (like Q2 in the test plan) |
+| NDT-10-N03 (link / lock parts) | Only "no new Driver App load" is observable in R1. Nearby Driver Link and source-Document lock come with later features | Later features |
+| NDT-10-P10 (other surfaces) | R1's Producer action is only on the Form Summary *Submitted* list (no editable Form, Post-Submission or Kiosk entry yet) | Those entry points |
+| Flex iOS (NDT-5) | No iOS devices in the grid | iOS device or simulator |
+
+**When R1 lands:** if the Producer's Nearby action moves off the submitted card's Bluetooth icon, update `FormsPage.OpenSubmittedCardBluetooth`. If the menu's wording differs from the requirements, the tests will say so by requirement ID; that's intended.

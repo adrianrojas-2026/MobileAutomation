@@ -106,6 +106,31 @@ The fixture runs on Node 2 (`testuser2`) and is `NonParallelizable`. Don't run i
 
 Details are in Part C of `docs/testing/test-scenarios-ble-ticket-handoff.md`.
 
+## Feature #10082 R1-C2: Transfer core (FEAT-NDT-2, 3, 5, 6, 10)
+
+Category `BLE-R1-C2` covers Flex's side of the transfer: the discovery menu, the Driver App cards, the Bluetooth access gate, and progress and cancel. As in R1-C1, these tests check the **requirement, not the POC**: they fail until R1 is built, and each failure names its requirement ID.
+
+| Test | Requirements | What it does |
+|---|---|---|
+| `NearbyDiscoveryMenuTests.NDT2_NoDriverApp_NoResultsAfter10s_TryAgain_DismissStopsDiscovery` | NDT-2-P01, P02, E01, E02, E03, E05, P16, N04 | No Driver App nearby: searching starts at once, the no-results state appears after 10 s, Try Again starts a new 10-s attempt, and dismissing mid-search stops discovery and leaves the ticket as it was |
+| `NearbyDiscoveryMenuTests.NDT2_NDT3_DriverAppFound_ListedWhileDiscoveryContinues` | NDT-2-P03, E06, P04, N02, N01; NDT-3-P01, P03, P21, P12 | The Driver App's card shows under the running search and stays past 10 s while the search continues. It shows *Driver App*, its *Identity Code* and a distance, and disappears by itself once the Driver App closes |
+| `NearbyTransferProgressTests.NDT10_SelectDriverApp_StopsDiscovery_ShowsSendDataProgress` | NDT-2-P14, N04; NDT-10-P01, P02, P03, P04, P06, P07, N01 | Picking the Driver App stops discovery. The same menu then shows *Send Data*, *Connecting…* and *Sending data…* with a spinner and Cancel, and no percentage |
+| `NearbyTransferProgressTests.NDT10_CancelDuringTransfer_ReturnsToUnchangedTicket` | NDT-10-P08, N02, P09, P10, N03, E01 | A tap outside and Escape don't dismiss the menu. Cancel returns to the unchanged ticket with no load on the Driver App, or success wins if the Driver App committed first |
+| `NearbyRuntimeAccessTests.NDT6_BluetoothOff_ShowsAccessFlow_ThenSearchesOnceOn` | NDT-6-P01, P02, P03, P08, N01, P09 | Bluetooth off: the Bluetooth Access flow appears instead of a search; once Bluetooth is on, the search starts without tapping the Nearby action again |
+| `NearbyRuntimeAccessTests.NDT6_BluetoothOff_CancelAccessFlow_ReturnsWithoutSearching` | NDT-6-E02 | Cancel in the access flow returns to the ticket list and no search starts, even after Bluetooth comes back |
+| `NearbyRuntimeAccessTests.NDT6_NearbyAccessDenied_DoesNotSearch` | NDT-6-P02, E03, N01 | The user refuses Nearby devices access: no search starts |
+| `NearbySupportedClientsTests.NDT5_FlexWithoutNearby_KeepsQrAction_ShowsNoNearbyAction` | NDT-5-P05, P06, N01 | **`RunMode=Web` only** (ignored on devices): Flex Web shows no Nearby action, not even a disabled one, and its QR action still works |
+
+How they work:
+- **Texts, not tags.** The R1 menu isn't built yet, so `Pages/NearbyDriverMenuPage.cs` reads the top Flex overlay by the texts the requirements define. A recorder inside the WebView logs every change, so short states such as *Connecting…* are caught and timed.
+- **Scan state from Android.** "Discovery stopped" is also checked from Android's own record of Flex's Bluetooth scans (`BluetoothHelper.IsScanning`).
+- **Same Driver App setup as R1-C1.** The tests stop the grid Driver Apps and find this node's Driver App by difference. The Driver App uses the POC's *Receive via Bluetooth* while that button exists, so an R1-C1 gap doesn't hide the R1-C2 results.
+- **The device is put back.** The NDT-6 tests turn the Flex emulator's Bluetooth off or revoke its Nearby devices access, and restore both in `finally`.
+
+All of them except the Web one run on Node 2 (`testuser2`) and are `NonParallelizable`. Don't run them next to the BLE handoff tests: they stop those tests' Driver Apps.
+
+Not automated in R1-C2: the alternative-action requirements, which wait on an open question about which alternative R1's entry point offers; distance sorting, press deferral and removal animations; and Driver Session identity cards (`driverSession` is off in every build). Part D of `docs/testing/test-scenarios-ble-ticket-handoff.md` lists each requirement with its reason.
+
 ## Project layout
 
 | Path | Contents |
@@ -113,6 +138,8 @@ Details are in Part C of `docs/testing/test-scenarios-ble-ticket-handoff.md`.
 | `Tests/` | Test fixtures (`BaseTest` handles teardown and the HTML report) |
 | `Pages/` | Flex page objects (`LoginPage`, `PrivacyPolicyPage`, `HomePage`, `FormsPage`, `CollectionLoadTicketFormPage`, `LoadDisposalFormPage`, ...) |
 | `Pages/BleTruckPickerPage.cs` | Flex *Send via Bluetooth* picker: lists Driver Apps by truck code, Rescan, final send status |
+| `Pages/NearbyDriverMenuPage.cs` | #10082 R1 Nearby menu (discovery, progress, Bluetooth Access flow), read by the required texts and recorded from inside the WebView |
+| `Tests/NearbyTestBase.cs` | Shared setup for the #10082 Nearby fixtures: stops the grid Driver Apps, opens the Nearby menu, finds this node's Driver App |
 | `Pages/Driver/` | Driver App page objects (`DriverOnboardingPage`, `DriverHomePage`, `DriverReceiptPage`). `DriverHomePage` also covers Receive via Bluetooth, the truck code and toasts |
 | `Flows/` | Steps shared by tests: `CollectionLoadTicketFlow` (Flex login → submitted collection ticket), `DriverAppFlow` (Driver App onto Home, restart) |
 | `Utilities/NearbyDevicesPermission.cs` | Resets, answers and checks Android's *Nearby devices* (Bluetooth) permission |
@@ -356,6 +383,12 @@ A run takes about **4 minutes** per node. On a pass, the console shows the truck
 dotnet test --filter "Category=BLE-R1-C1" --logger "console;verbosity=normal"
 ```
 
+**#10082 R1-C2 transfer core** also needs only Node 2, about **2–3 minutes per test**. The NDT-5 test only runs with `TestSettings:RunMode=Web`; on devices it is ignored:
+
+```powershell
+dotnet test --filter "Category=BLE-R1-C2" --settings Setup/mobile.runsettings --logger "console;verbosity=normal"
+```
+
 A run whose load took longer than 5 s ends with a **warning** outcome. The `dotnet test` summary doesn't count that as passed (Test Explorer shows it as Skipped), but all of its checks held. The recorded JSON shows its numbers. `Run-Suite.ps1` passes `Setup/mobile.runsettings`, which reports warnings as Passed; add `--settings Setup/mobile.runsettings` to a plain `dotnet test` for the same.
 
 All nodes pick the **first truck**. If the backend ever allows only one active load per truck, every node but the first will fail at the Driver scan step.
@@ -376,6 +409,7 @@ Does everything in [Before each Mobile run](#before-each-mobile-run), then runs 
 .\Setup\Run-Suite.ps1                                    # Category=BLE on nodes 2,3, apps as installed
 .\Setup\Run-Suite.ps1 -RebuildApks                       # fresh debug APKs from the UI repo first
 .\Setup\Run-Suite.ps1 -Filter "Category=BLE-R1-C1" -Nodes 2
+.\Setup\Run-Suite.ps1 -Filter "Category=BLE-R1-C2" -Nodes 2
 .\Setup\Run-Suite.ps1 -Target QA -FlexApk <flex.apk> -DriverApk <driver.apk>   # QA services, no Aspire
 .\Setup\Run-Suite.ps1 -Teardown                          # stop the grid, and Appium / Aspire if it started them
 .\Setup\Run-Suite.ps1 -Stop                              # only that teardown
@@ -479,6 +513,7 @@ The local-Aspire pipeline runs nightly on weekdays and by hand (parameters: filt
 | `Node3 has no Flex account of its own` | Set `TestSettings:Node3:LoginEmail` and `LoginPassword` in user-secrets (same for Node2) |
 | `Start-MobileGrid.ps1`: *emulator-55xx is running 'X', not 'Y'* | The emulators were started on the wrong ports. Run `.\Setup\Start-MobileGrid.ps1 -Stop`, then start the grid again |
 | `Login as '...' did not leave the Log In screen` | Wrong password for that node's account, or the backend can't be reached. The message lists the error text the app showed |
+| *emulator-55xx cannot resolve host names (DNS is down)* | The emulator kept the host's DNS servers from boot time, and the host's network (VPN, Wi-Fi) changed since. Run `.\Setup\Start-MobileGrid.ps1 -Stop` and start the grid again; the script pins `-dns-server 8.8.8.8,1.1.1.1` |
 | *Street Name was not filled in ... (reverse geocoding failed twice)* | The emulator can't reach the address lookup (ArcGIS), or the GPS fix never arrived. Check the emulator's network, or run `adb -s <serial> emu geo fix -81.69 28.16` while the form is waiting |
 | `No QR code could be read from the staged image` | The QR image couldn't be decoded. Check the `QrCodes/*.png` attachment for a cropped or blank image |
 | Driver App stuck on the tutorial (Android 13+) | The WebView SKIP tap failed. Look for the SKIP button in the Driver failure `.html` |
@@ -487,4 +522,6 @@ The local-Aspire pipeline runs nightly on weekdays and by hand (parameters: filt
 | BLE: *Flex did not find the Driver app 'RTD-XXXX' after 3 Bluetooth searches* | The Driver App stopped advertising (it advertises for 2 minutes after Receive via Bluetooth), or the emulator's Bluetooth is off. The message lists the truck codes Flex did find |
 | BLE: `sendResult` is *"Waiting for confirmation…"* or a failure message | Flex sent the ticket but the Driver App didn't confirm it. Check that the Driver emulator is responsive and run again |
 | `10082-NDT-1-… not met` | Expected until R1: the Driver App doesn't advertise without *Receive via Bluetooth*. If `NDT1_Control_…` also fails, the search itself is broken (check that the Flex picker opens and that the Driver emulator's Bluetooth is on) |
+| `10082-NDT-2/3/5/6/10-… not met` | Expected until R1: the POC picker has other texts, a 15-s search, a progress bar and no Cancel. A `Precondition not met: Flex did not list this node's Driver App` failure is different: the Driver App isn't advertising (check `NDT1_Control_…` and the Driver emulator's Bluetooth) |
+| Flex emulator left with Bluetooth off | An NDT-6 test was killed before its `finally` ran. Turn it back on with `adb -s <udid> shell cmd bluetooth_manager enable` |
 | BLE: a fixture shows neither *Passed* nor *Failed* | The run passed every check but took over 5 s, so it ended with a warning. See `Baselines/BLE-TC12_<node>_*.json` |

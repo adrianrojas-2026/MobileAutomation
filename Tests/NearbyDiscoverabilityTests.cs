@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Microsoft.Extensions.Configuration;
 using MobileAutomation.Tests.Drivers;
 using MobileAutomation.Tests.Flows;
 using MobileAutomation.Tests.Pages;
@@ -22,14 +21,8 @@ namespace RecoveryTrac.AutomatedTests
     [TestFixture]
     [Category("BLE-R1-C1")]
     [NonParallelizable]
-    public class NearbyDiscoverabilityTests : DualAppTestBase
+    public class NearbyDiscoverabilityTests : NearbyTestBase
     {
-        private const string Node = "Node2";
-        private const string DriverPackage = "com.tetratech.recoverytracdriver";
-
-        protected override string NodeForCurrentTest => Node;
-        protected override string? AccountForCurrentTest => "testuser2";
-
         // 10082-NDT-1-P01 / N02: Driver app open on Home, never put in receive mode, and nothing for the driver to
         // approve on its screen while Flex finds it
         [Test]
@@ -201,7 +194,7 @@ namespace RecoveryTrac.AutomatedTests
 
             var flow = new CollectionLoadTicketFlow(DriverFactory.DriverFlex, _wait.Value!, Node);
             flow.LoginAndEnterWebView();
-            string ticketId = AnySubmittedTicket(flow);
+            string ticketId = AnySubmittedTicket(flow, "Nearby discoverability");
 
             flow.Forms.OpenSubmittedCardBluetooth(ticketId);
             NearbyDevicesPermission.AllowWhenAsked(flexAndroid, timeoutSeconds: 5);
@@ -253,44 +246,6 @@ namespace RecoveryTrac.AutomatedTests
                 ? $"📡 {check}: Flex lists the Driver app as '{found}' after {timer.Elapsed.TotalSeconds:N1} s."
                 : $"📡 {check}: Flex did not list the Driver app in 2 searches ({timer.Elapsed.TotalSeconds:N1} s).");
             return found;
-        }
-
-        // The ticket only carries the send; any submitted 'Load - Collection' ticket opens the picker. One is submitted
-        // when the account has none yet
-        private static string AnySubmittedTicket(CollectionLoadTicketFlow flow)
-        {
-            flow.Forms.OpenFormsMenu();
-            flow.Forms.OpenForm(CollectionLoadTicketFlow.FormName);
-            var submitted = flow.Forms.GetSubmittedTicketIds();
-            if (submitted.Count > 0) return submitted[0];
-
-            var draft = flow.FillAndSubmitTicket($"Automated test - Nearby discoverability {Node} {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-            flow.TicketForm.DeclineQrGeneration();
-            return flow.VerifyTicketSubmittedAndSynced(draft);
-        }
-
-        // All grid emulators share one simulated Bluetooth, so a Driver app left open on another node would be listed
-        // too. The fixture is NonParallelizable, so none of them is in use by another test.
-        // NDT-1 only applies while the runtime access Nearby needs is available, so it is granted up front: a Driver app
-        // left waiting on Android's Nearby devices question would fail for the wrong reason, and N02 would count the
-        // question as a prompt. Granting (unlike revoking) does not stop the app; on Android 11 and older pm grant just
-        // fails, as these permissions don't exist there
-        private static void PrepareGridDriverApps()
-        {
-            var online = AdbHelper.OnlineDevices();
-            var driverUdids = TestConfiguration.Configuration.GetSection("MobileConfigurations").GetChildren()
-                .Where(c => c.Key.EndsWith("_Driver", StringComparison.Ordinal) && c["Udid"] is { } udid && online.Contains(udid))
-                .Select(c => c["Udid"]!)
-                .Distinct();
-            foreach (string udid in driverUdids)
-            {
-                AdbHelper.Run(udid, $"shell am force-stop {DriverPackage}");
-                foreach (string permission in NearbyDevicesPermission.Driver)
-                {
-                    AdbHelper.Run(udid, $"shell pm grant {DriverPackage} {permission}");
-                }
-            }
-            Console.WriteLine("🛑 Driver app stopped, with Nearby devices access granted, on every online grid Driver emulator.");
         }
     }
 }
