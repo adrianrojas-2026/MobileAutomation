@@ -58,6 +58,31 @@ function Get-RunningAvd([string]$serial) {
     if ($name) { return $name.Trim() } else { return "" }
 }
 
+# The emulator's qemu process on a port, whatever adb thinks of it (still booting, offline, shutting down)
+function Get-EmulatorProcess([int]$port) {
+    Get-CimInstance Win32_Process -Filter "Name LIKE 'qemu-system-%'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -match "-port\s+$port(\s|$)" }
+}
+
+# 'emu kill' only asks the emulator to quit, so wait for its process to exit (force it after a while) and
+# clear the AVD's lock files; otherwise the next start sees a half-dead emulator or refuses the locked AVD.
+function Stop-Emulator($emu, [int]$timeoutSeconds = 30) {
+    $serial = "emulator-$($emu.Port)"
+    Write-Host "Stopping $serial ($($emu.Avd))..." -ForegroundColor Yellow
+    & $adbPath -s $serial emu kill 2>$null | Out-Null
+    $waited = 0
+    while ((Get-EmulatorProcess $emu.Port) -and $waited -lt $timeoutSeconds) {
+        Start-Sleep -Seconds 1
+        $waited++
+    }
+    foreach ($process in @(Get-EmulatorProcess $emu.Port)) {
+        Write-Host " - $serial did not exit in ${timeoutSeconds}s; killing it." -ForegroundColor Yellow
+        Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+    $avdHome = if ($env:ANDROID_AVD_HOME) { $env:ANDROID_AVD_HOME } else { "$env:USERPROFILE\.android\avd" }
+    Remove-Item "$avdHome\$($emu.Avd).avd\*.lock" -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 # Every AVD remembers its own window position, so the windows land wherever they were last (often stacked, or
 # with tall skins such as Pixel_10_Pro above the top of a short display). Lay them out side by side instead:
 # left to right in grid order, filling each monitor (left to right, tallest-enough first) before the next.
@@ -112,12 +137,8 @@ if ($Arrange) {
 
 if ($Stop) {
     foreach ($emu in $grid) {
-        $serial = "emulator-$($emu.Port)"
-        # Stop whatever is on the port, even when its AVD name can't be read ("" is still running)
-        if ($null -ne (Get-RunningAvd $serial)) {
-            Write-Host "Stopping $serial ($($emu.Avd))..." -ForegroundColor Yellow
-            & $adbPath -s $serial emu kill | Out-Null
-        }
+        # Stop whatever is on the port, booted or not, even when its AVD name can't be read
+        if (Get-EmulatorProcess $emu.Port) { Stop-Emulator $emu }
     }
     exit 0
 }
@@ -140,6 +161,19 @@ foreach ($emu in $grid) {
     }
 
     $running = Get-RunningAvd $serial
+    if ($ColdBoot -and ($running -eq $emu.Avd -or $running -eq "")) {
+        # A running emulator kept its Quick Boot state; restart it so -ColdBoot actually applies
+        Stop-Emulator $emu
+        $running = $null
+    } elseif ($null -eq $running -and (Get-EmulatorProcess $emu.Port)) {
+        # Still booting (or offline) from an earlier start: launching again would fight it for the port
+        if ($ColdBoot) {
+            Stop-Emulator $emu
+        } else {
+            Write-Host " - $label is already starting on $serial." -ForegroundColor Green
+            continue
+        }
+    }
     if ($null -ne $running) {
         if ($running -eq $emu.Avd) {
             Write-Host " - $label is already running on $serial." -ForegroundColor Green
