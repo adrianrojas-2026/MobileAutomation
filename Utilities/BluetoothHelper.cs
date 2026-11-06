@@ -26,6 +26,27 @@ public static class BluetoothHelper
 
     public static bool IsAirplaneModeOn(string udid) => AdbHelper.Read(udid, "shell settings get global airplane_mode_on") == "1";
 
+    public static bool IsBluetoothOn(string udid) => AdbHelper.Read(udid, "shell settings get global bluetooth_on") == "1";
+
+    // An emulator can boot with Bluetooth off (seen on the Pixel_7_Android_13 AVD after a cold boot); the apps then
+    // raise Android's "<app> wants to turn on Bluetooth" dialog instead of advertising/scanning. Turn it on up front
+    public static void EnsureBluetoothOn(string udid, int timeoutSeconds = 15)
+    {
+        if (IsBluetoothOn(udid)) return;
+
+        AdbHelper.Run(udid, "shell cmd bluetooth_manager enable");
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        while (!IsBluetoothOn(udid))
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new InvalidOperationException($"{udid}: Bluetooth is still off {timeoutSeconds} s after 'cmd bluetooth_manager enable'.");
+            }
+            Thread.Sleep(500);
+        }
+        Console.WriteLine($"📶 {udid}: Bluetooth was off; turned it on.");
+    }
+
     public static BluetoothReadiness Probe(string udid, IEnumerable<string> packages)
     {
         var apps = new Dictionary<string, AppBluetoothState>();
