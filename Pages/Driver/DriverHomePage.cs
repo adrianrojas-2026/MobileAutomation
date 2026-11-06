@@ -90,6 +90,9 @@ public class DriverHomePage : BasePage
     // monitor to pick in Flex. Offered next to Scan QR Code, and under Cancel Load when a load is active
     public void ReceiveViaBluetooth() => ClickVisible(ButtonByText("RECEIVE VIA BLUETOOTH"), "Receive via Bluetooth");
 
+    // The POC's receive mode button; R1 drops the need for it (10082-NDT-1-N02)
+    public bool IsReceiveViaBluetoothShown(int timeoutSeconds = 5) => FindVisible(ButtonByText("RECEIVE VIA BLUETOOTH"), timeoutSeconds) != null;
+
     // Whether the POC's receive panel (Receive via Bluetooth) is showing, i.e. the driver put the app in receive mode
     public bool IsReceiving => Driver.FindElements(By.CssSelector("app-home .receive-panel")).Any(e => e.Displayed);
 

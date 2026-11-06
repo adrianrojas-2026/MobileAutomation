@@ -68,6 +68,14 @@ public static class AdbHelper
         return output.Wait(timeoutMs) ? output.Result.Trim() : string.Empty;
     }
 
+    // An emulator can lose DNS while its IP traffic still works (it keeps the host's DNS servers from boot time, so a
+    // VPN or Wi-Fi change on the host breaks name lookups). Ping prints "unknown host" when the name can't be resolved
+    public static bool CanResolveHost(string udid, string host)
+    {
+        var output = Read(udid, $"shell \"ping -c 1 -W 3 {host} 2>&1\"", timeoutMs: 10000);
+        return !output.Contains("unknown host", StringComparison.OrdinalIgnoreCase);
+    }
+
     // A frozen emulator stays "device" in adb devices but never answers a shell command; Appium then waits out its adb
     // timeouts on every command. This asks for an answer within a few seconds instead
     public static bool IsResponsive(string udid, int timeoutSeconds = 10)

@@ -28,6 +28,36 @@ public static class BluetoothHelper
 
     public static bool IsBluetoothOn(string udid) => AdbHelper.Read(udid, "shell settings get global bluetooth_on") == "1";
 
+<<<<<<< HEAD
+    // Turns the device's Bluetooth adapter on or off, as the user would from quick settings, and waits for it; false
+    // when the adapter did not follow
+    public static bool SetBluetooth(string udid, bool enabled, int timeoutSeconds = 20)
+    {
+        AdbHelper.Run(udid, $"shell cmd bluetooth_manager {(enabled ? "enable" : "disable")}");
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        while (IsBluetoothOn(udid) != enabled)
+        {
+            if (DateTime.UtcNow >= deadline) return false;
+            Thread.Sleep(500);
+        }
+        Console.WriteLine($"📶 {udid}: Bluetooth {(enabled ? "on" : "off")}.");
+        return true;
+    }
+
+    // Whether the app has a BLE scan running right now. Android's GATT scanner map counts each app's LE scans as
+    // "started / stopped", so more started than stopped means one is running. An app missing from the map never
+    // scanned (false). Null when the dump has no scanner map at all (Bluetooth off, or another Android layout).
+    // A scan made for the app by Google Play services (Nearby Connections) is counted under GMS, not the app
+    public static bool? IsScanning(string udid, string package)
+    {
+        string dump = AdbHelper.Read(udid, "shell dumpsys bluetooth_manager");
+        if (!dump.Contains("GATT Scanner Map", StringComparison.Ordinal)) return null;
+
+        var counts = System.Text.RegularExpressions.Regex.Match(dump,
+            $@"^\s*{System.Text.RegularExpressions.Regex.Escape(package)}[^\n]*\n\s*LE scans \(started/stopped\)\s*:\s*(\d+)\s*/\s*(\d+)",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+        return counts.Success && int.Parse(counts.Groups[1].Value) > int.Parse(counts.Groups[2].Value);
+=======
     // An emulator can boot with Bluetooth off (seen on the Pixel_7_Android_13 AVD after a cold boot); the apps then
     // raise Android's "<app> wants to turn on Bluetooth" dialog instead of advertising/scanning. Turn it on up front
     public static void EnsureBluetoothOn(string udid, int timeoutSeconds = 15)
@@ -45,6 +75,7 @@ public static class BluetoothHelper
             Thread.Sleep(500);
         }
         Console.WriteLine($"📶 {udid}: Bluetooth was off; turned it on.");
+>>>>>>> 5aded2345b378a08615439c2665efa1d3aa6c2ca
     }
 
     public static BluetoothReadiness Probe(string udid, IEnumerable<string> packages)
@@ -70,7 +101,7 @@ public static class BluetoothHelper
             int.TryParse(AdbHelper.Read(udid, "shell getprop ro.build.version.sdk"), out int sdk) ? sdk : 0,
             AdbHelper.Read(udid, "shell getprop ro.product.model"),
             AdbHelper.Read(udid, "shell pm has-feature android.hardware.bluetooth_le") == "true",
-            AdbHelper.Read(udid, "shell settings get global bluetooth_on") == "1",
+            IsBluetoothOn(udid),
             IsAirplaneModeOn(udid),
             apps);
     }

@@ -118,6 +118,19 @@ public class FormsPage : BasePage
             jsClickWhenIntercepted: true);
     }
 
+    // Actions in a submitted card's header (QR, Bluetooth, Print...), each by its icon name or caption, whether shown
+    // or not and whether disabled
+    public IReadOnlyList<(string Name, bool Displayed, bool Disabled)> GetSubmittedCardActions(string ticketId)
+    {
+        var card = Find(SubmittedCard(ticketId));
+        return card.FindElements(By.XPath(".//ion-card-header//*[self::ion-icon or self::ion-button or self::button]"))
+            .Select(e => (
+                Name: e.TagName == "ion-icon" ? e.GetAttribute("name") ?? string.Empty : e.Text.Trim(),
+                e.Displayed,
+                Disabled: e.GetAttribute("disabled") is { } disabled && disabled != "false" || e.GetAttribute("aria-disabled") == "true"))
+            .ToList();
+    }
+
     // Sync runs in the background after submit; wait until the card shows the "Synced" status
     public bool WaitUntilSynced(string ticketId, int timeoutSeconds = 90)
     {

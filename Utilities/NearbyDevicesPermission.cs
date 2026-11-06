@@ -18,6 +18,10 @@ public static class NearbyDevicesPermission
     private static readonly By AllowButton = By.XPath(
         "//*[@resource-id='com.android.permissioncontroller:id/permission_allow_button']" +
         " | //android.widget.Button[translate(@text,'ALOW','alow')='allow']");
+    private static readonly By DenyButton = By.XPath(
+        "//*[@resource-id='com.android.permissioncontroller:id/permission_deny_button'" +
+        " or @resource-id='com.android.permissioncontroller:id/permission_deny_and_dont_ask_again_button']" +
+        " | //android.widget.Button[starts-with(translate(@text,'DON','don'),'don')]"); // "Don't allow" / "Don’t allow"
 
     // Revokes the permissions and clears "user set / don't ask again", so the app asks again. Android stops an app
     // whose permission is revoked: call this before the app is (re)launched
@@ -31,6 +35,16 @@ public static class NearbyDevicesPermission
         Console.WriteLine($"🔒 {udid}: Nearby devices permission reset for {package}, so Android asks again.");
     }
 
+    // Grants the permissions without asking; unlike revoking, granting does not stop the app. On Android 11 and older
+    // pm grant just fails, as these permissions don't exist there
+    public static void Grant(string udid, string package, IEnumerable<string> permissions)
+    {
+        foreach (string permission in permissions)
+        {
+            AdbHelper.Run(udid, $"shell pm grant {package} {permission}");
+        }
+    }
+
     public static bool IsGranted(string udid, string package, IEnumerable<string> permissions)
     {
         string dump = AdbHelper.Read(udid, $"shell dumpsys package {package}");
@@ -39,7 +53,14 @@ public static class NearbyDevicesPermission
 
     // Waits for the system dialog and taps Allow; returns whether Android asked. The page objects run in the WEBVIEW
     // context, so it hops to NATIVE_APP for the dialog and back
-    public static bool AllowWhenAsked(AndroidDriver driver, int timeoutSeconds = 15)
+    public static bool AllowWhenAsked(AndroidDriver driver, int timeoutSeconds = 15) =>
+        AnswerWhenAsked(driver, AllowButton, "Allow", timeoutSeconds);
+
+    // Same, tapping Don't allow: the user refusing Nearby devices access
+    public static bool DenyWhenAsked(AndroidDriver driver, int timeoutSeconds = 15) =>
+        AnswerWhenAsked(driver, DenyButton, "Don't allow", timeoutSeconds);
+
+    private static bool AnswerWhenAsked(AndroidDriver driver, By button, string buttonName, int timeoutSeconds)
     {
         string context = driver.Context;
         driver.Context = "NATIVE_APP";
@@ -57,13 +78,13 @@ public static class NearbyDevicesPermission
             }
             if (dialog == null) return false;
 
-            Console.WriteLine($"📱 Android asks: '{dialog.Text.Trim()}'. Tapping Allow...");
+            Console.WriteLine($"📱 Android asks: '{dialog.Text.Trim()}'. Tapping {buttonName}...");
             // Android ignores a tap on the permission dialog while another window covers it (e.g. a toast) or while
             // a busy emulator's System UI lags, so tap again until the dialog closes
             var deadline = DateTime.UtcNow.AddSeconds(30);
             for (int tap = 1; ; tap++)
             {
-                driver.FindElements(AllowButton).FirstOrDefault(b => b.Displayed)?.Click();
+                driver.FindElements(button).FirstOrDefault(b => b.Displayed)?.Click();
                 var closed = new WebDriverWait(driver, TimeSpan.FromSeconds(5));
                 closed.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
                 try
@@ -73,7 +94,7 @@ public static class NearbyDevicesPermission
                 }
                 catch (WebDriverTimeoutException) when (DateTime.UtcNow < deadline)
                 {
-                    Console.WriteLine($"📱 The dialog is still open after tap {tap}; tapping Allow again...");
+                    Console.WriteLine($"📱 The dialog is still open after tap {tap}; tapping {buttonName} again...");
                 }
             }
         }
