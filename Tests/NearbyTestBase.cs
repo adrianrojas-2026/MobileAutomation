@@ -11,8 +11,9 @@ using OpenQA.Selenium.Appium.Android;
 namespace MobileAutomation.Tests.Tests;
 
 // The Driver App this node's test started and how Flex lists it. FoundAfter counts from the start of the discovery
-// attempt that found it (SinceAttempt)
-public record OwnDriverApp(string Key, IWebDriver App, DriverHomePage Home, Stopwatch SinceAttempt, double FoundAfter, MenuSnapshot WhenFound);
+// attempt that found it (SinceAttempt). Others: the card keys Flex listed before this Driver App was started
+public record OwnDriverApp(string Key, IWebDriver App, DriverHomePage Home, Stopwatch SinceAttempt, double FoundAfter, MenuSnapshot WhenFound,
+    IReadOnlySet<string> Others);
 
 // Feature #10082 Nearby tests (R1-C1 discoverability, R1-C2 transfer core) on Node 2 with testuser2. All emulators
 // share one simulated Bluetooth, so these fixtures run on their own and stop the Driver app on the other grid
@@ -118,6 +119,10 @@ public abstract class NearbyTestBase : DualAppTestBase
     protected static (IWebDriver App, DriverHomePage Home) StartDiscoverableDriverApp()
     {
         var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
+        if (driverApp is AndroidDriver driverDevice)
+        {
+            BluetoothHelper.EnsureBluetoothOn(AdbHelper.GetUdid(driverDevice)!);
+        }
         driverHome.CancelStaleLoadIfPresent();
         if (driverHome.IsReceiveViaBluetoothShown())
         {
@@ -156,6 +161,20 @@ public abstract class NearbyTestBase : DualAppTestBase
         var own = found!.Cards.First(c => !others.Contains(c.Key));
         double foundAfter = sinceAttempt.Elapsed.TotalSeconds;
         Console.WriteLine($"📡 Flex lists this node's Driver App as '{own.Key}' ({string.Join(" / ", own.Lines)}) after {foundAfter:N1} s.");
-        return new OwnDriverApp(own.Key, driverApp, driverHome, sinceAttempt, foundAfter, found);
+        return new OwnDriverApp(own.Key, driverApp, driverHome, sinceAttempt, foundAfter, found, others);
+    }
+
+    // This node's Driver App card once it can be picked. A new card first shows 'Loading truck details…' (not
+    // selectable, keyed by its Identity Code) and becomes the truck's card when its details arrive (keyed by the truck),
+    // or stays a 'Driver App' card when the read fails (after 5 s); either way it is the card not listed before
+    protected static DriverCard WaitForSelectableCard(NearbyDriverMenuPage menu, OwnDriverApp own, int timeoutSeconds = 15)
+    {
+        bool Ready(DriverCard c) => !own.Others.Contains(c.Key) && !c.Disabled && !c.Lines.Contains(NearbyDriverMenuPage.LoadingTruckDetails);
+        var ready = menu.WaitFor(s => s.Cards.Any(Ready), timeoutSeconds);
+        Assert.That(ready, Is.Not.Null,
+            $"This node's Driver App card ('{own.Key}') did not become selectable within {timeoutSeconds} s ({menu.Snapshot()}).");
+        var card = ready!.Cards.First(Ready);
+        Console.WriteLine($"📡 Driver App card ready: '{card.Key}' ({string.Join(" / ", card.Lines)}).");
+        return card;
     }
 }

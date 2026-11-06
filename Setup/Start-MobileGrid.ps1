@@ -18,6 +18,9 @@ param(
     [switch]$ColdBoot,
     # Only lay out the windows of emulators that are already running (nothing is started or stopped)
     [switch]$Arrange,
+    # The caller installs the apps after the grid is up (Run-Suite -RebuildApks / -FlexApk -DriverApk): a missing
+    # app is reported but doesn't fail the grid
+    [switch]$AppsInstalledLater,
     [int]$BootTimeoutSeconds = 300,
     # Six emulators at their AVD defaults (up to 4 GB / 4 cores each) don't fit a 32 GB / 20-thread laptop
     # next to Aspire, Appium and the IDE. These override each AVD's RAM and cores for this launch only.
@@ -255,8 +258,12 @@ foreach ($emu in $grid) {
     $release = (& $adbPath -s $serial shell getprop ro.build.version.release).Trim()
     $installed = [bool](& $adbPath -s $serial shell pm list packages $emu.Package | Select-String -SimpleMatch "package:$($emu.Package)")
     $notes = @()
+    $info = @()
     if ($release -ne $emu.Android) { $notes += "Android $release (expected $($emu.Android))" }
-    if (-not $installed) { $notes += "$($emu.Package) NOT installed"; $missingApk = $true }
+    if (-not $installed) {
+        if ($AppsInstalledLater) { $info += "$($emu.Package) not installed yet" }
+        else { $notes += "$($emu.Package) NOT installed"; $missingApk = $true }
+    }
     # An emulator that was already running may predate -dns-server and still hold stale host DNS. Right after a
     # boot the network can still be coming up, so give it a few tries before flagging it
     $hasDns = $false
@@ -269,7 +276,7 @@ foreach ($emu in $grid) {
 
     $line = " Node $($emu.Node) {0,-6} {1}  {2,-19} Android {3,-3}" -f $emu.Role, $serial, $emu.Avd, $release
     if ($notes.Count -eq 0) {
-        Write-Host "$line OK" -ForegroundColor Green
+        Write-Host "$line OK$(if ($info.Count -gt 0) { " ($($info -join '; '))" })" -ForegroundColor Green
     } else {
         Write-Host "$line $($notes -join '; ')" -ForegroundColor Yellow
         $problems++

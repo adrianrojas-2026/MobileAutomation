@@ -50,15 +50,15 @@ Generated QR codes are saved under `bin/Debug/net10.0/QrCodes/` (named with the 
 | `BleTicketHandoffTests("Node2","testuser2")` | `Grid_Node2_Flex` (Android 15) + `Grid_Node2_Driver` (Android 13) | the configured account whose email is `…testuser2@…` |
 | `BleTicketHandoffTests("Node3","testuser4")` | `Grid_Node3_Flex` (Android 17) + `Grid_Node3_Driver` (Android 16) | the configured account whose email is `…testuser4@…` |
 
-The two fixtures run **in parallel** (`[Parallelizable(ParallelScope.Self)]`), each with its own Flex account. Neither sees the other's tickets, nor the tickets of Node 1's QR E2E, which uses `testuser1`. The account name is matched against the `LoginEmail` values in user-secrets (`TestSettings:LoginEmail` or any `TestSettings:<name>:LoginEmail`). Its section name doesn't matter, but the account must be set there.
+The two fixtures run **one after the other** (`[NonParallelizable]`): each test stops every grid Driver App to tell its own apart (see *Shared Bluetooth* below). Each fixture uses its own Flex account. Neither sees the other's tickets, nor the tickets of Node 1's QR E2E, which uses `testuser1`. The account name is matched against the `LoginEmail` values in user-secrets (`TestSettings:LoginEmail` or any `TestSettings:<name>:LoginEmail`). Its section name doesn't matter, but the account must be set there.
 
 **What each run covers:**
 
 | Check | Covered by |
 |---|---|
 | **TC-12: happy path** | Flex sends a submitted *Load - Collection* ticket via Bluetooth. The Driver App shows it as its **Current Load**, with a *"Load <number> received."* toast |
-| **TC-12: Nearby devices permission** | The Flex permission is reset before the run, so Android must ask *"Allow Flex to find nearby devices?"* the first time Flex uses Bluetooth. The test taps **Allow** and checks the permission is granted |
-| **TC-12: truck code** | Flex lists the Driver App by the truck code that Driver App shows (`RTD-XXXX`). The status line must read **Sent to RTD-XXXX** |
+| **TC-12: Bluetooth access** | The Flex permission is reset before the run. Android must ask *"Allow Flex to find nearby devices?"* the first time Flex uses Bluetooth (straight away, or after **Continue** on Flex's *Bluetooth Access Required* alert). The test taps **Allow** and checks the permission is granted |
+| **TC-12: Driver App card** | Flex lists this node's Driver App as an identity card (the truck's details, or *Driver App* + *Identity Code*). The status must read **Sent to <Identity Code>**, then **Done** closes the menu |
 | **TC-12: timing (check 2)** | Time from picking the truck to the load showing on the Driver App. Over **5 s** gives a **warning**, not a failure: emulator timings are indicative only, and sign-off happens on the demo phones |
 | **TC-13: payload parity** | The Driver App's load QR decodes to exactly the same payload as the same ticket's QR in Flex. Both SHA-256 hashes are recorded |
 
@@ -66,16 +66,16 @@ The two fixtures run **in parallel** (`[Parallelizable(ParallelScope.Self)]`), e
 
 1. **Flex:** resets and relaunches Flex (Nearby devices permission revoked), logs in, then fills in and submits a *Load - Collection* ticket. Steps 1–17 use the same flow as the QR tests (`Flows/CollectionLoadTicketFlow.cs`).
 2. **Flex:** declines the QR prompt and finds the ticket under **Submitted**, then waits for it to reach Synced.
-3. **Driver App:** GET STARTED → SKIP and cancels any load left over from an earlier run. Then it taps **Receive via Bluetooth** (allowing Nearby devices if asked) and reads the truck code it advertises.
-4. **Flex:** taps the submitted card's **Bluetooth** icon, allows Nearby devices, and the *Send via Bluetooth* picker opens.
-5. **Flex:** waits for the truck code to be listed (pressing **Rescan** up to twice if a search ends without it), picks it, and waits for the final status.
+3. **Flex:** stops the Driver App on every grid emulator (granting it Nearby devices), taps the submitted card's **Bluetooth** icon, taps **Allow** on Android's question (and **Continue** on *Bluetooth Access Required* if Flex shows it). The Nearby menu (*Send via Bluetooth*) searches; what it lists now is other devices.
+4. **Driver App:** GET STARTED → SKIP and cancels any load left over from an earlier run. There is no *Receive via Bluetooth* button: the app is discoverable while it is open.
+5. **Flex:** **Try Again**, waits for the new card (this node's Driver App) to finish *Loading truck details…*, taps it, and waits for **Sent to …**.
 6. **Driver App:** waits for the Current Load and reads the toast and the load's QR. Back in Flex, the test opens the same ticket's QR as the reference payload.
 
-Each run saves its measurements to `bin/Debug/net10.0/Baselines/BLE-TC12_<node>_<timestamp>.json`: ticket, truck code, send result, `sentSeconds` / `loadedSeconds`, toast, payload length and both payload hashes.
+Each run saves its measurements to `bin/Debug/net10.0/Baselines/BLE-TC12_<node>_<timestamp>.json`: ticket, the Driver App card, send result, `sentSeconds` / `loadedSeconds`, toast, payload length and both payload hashes.
 
 **Not covered yet:** the disposal side of the BLE handoff (still in development), so the test ends once the Driver App holds the load. The ×10 iteration run and the "≥ 9 of 10 under 5 s" sign-off from the test plan are also out of scope. Emulator timings are indicative only.
 
-**Shared Bluetooth:** all emulators share one simulated Bluetooth, so each Flex also lists the other node's Driver App. That's why each Flex picks its own Driver App by truck code rather than taking the first one listed.
+**Shared Bluetooth:** all emulators share one simulated Bluetooth, so each Flex would also list the other node's Driver App, and the Driver App doesn't show the Identity Code Flex lists it by. So the test finds its own Driver App by difference: it stops every grid Driver App, notes what Flex lists, starts its own and takes the card that appears.
 
 ## Feature #10082 R1-C1: Driver App Nearby discoverability (FEAT-NDT-1)
 
@@ -137,10 +137,10 @@ Not automated in R1-C2: the alternative-action requirements, which wait on an op
 |---|---|
 | `Tests/` | Test fixtures (`BaseTest` handles teardown and the HTML report) |
 | `Pages/` | Flex page objects (`LoginPage`, `PrivacyPolicyPage`, `HomePage`, `FormsPage`, `CollectionLoadTicketFormPage`, `LoadDisposalFormPage`, ...) |
-| `Pages/BleTruckPickerPage.cs` | Flex *Send via Bluetooth* picker: lists Driver Apps by truck code, Rescan, final send status |
+| `Pages/BleTruckPickerPage.cs` | POC Flex *Send via Bluetooth* picker (truck codes, Rescan), still used by `NearbyDiscoverabilityTests`; TC-12/13 use `NearbyDriverMenuPage` |
 | `Pages/NearbyDriverMenuPage.cs` | #10082 R1 Nearby menu (discovery, progress, Bluetooth Access flow), read by the required texts and recorded from inside the WebView |
 | `Tests/NearbyTestBase.cs` | Shared setup for the #10082 Nearby fixtures: stops the grid Driver Apps, opens the Nearby menu, finds this node's Driver App |
-| `Pages/Driver/` | Driver App page objects (`DriverOnboardingPage`, `DriverHomePage`, `DriverReceiptPage`). `DriverHomePage` also covers Receive via Bluetooth, the truck code and toasts |
+| `Pages/Driver/` | Driver App page objects (`DriverOnboardingPage`, `DriverHomePage`, `DriverReceiptPage`). `DriverHomePage` also covers the current load, its QR and toasts (and the POC's Receive via Bluetooth / truck code, used only while that button exists) |
 | `Flows/` | Steps shared by tests: `CollectionLoadTicketFlow` (Flex login → submitted collection ticket), `DriverAppFlow` (Driver App onto Home, restart) |
 | `Utilities/NearbyDevicesPermission.cs` | Resets, answers and checks Android's *Nearby devices* (Bluetooth) permission |
 | `Utilities/BaselineRecorder.cs` | Saves a run's measurements as JSON under `Baselines/` |
@@ -149,7 +149,9 @@ Not automated in R1-C2: the alternative-action requirements, which wait on an op
 | `Utilities/QrScanFeed.cs` | Hands a QR code to an app's scanner (Web: fake camera; Mobile: see [How Mobile mode handles the camera](#how-mobile-mode-handles-the-camera)) |
 | `Utilities/AdbHelper.cs` | `adb` helpers: port forwarding and adding photos to the gallery |
 | `Setup/Start-MobileGrid.ps1` | Starts the six node emulators on their fixed ports, then checks each one's Android version and installed APK |
-| `Setup/Build-DebugApk.ps1` | Builds and installs the Flex / Driver debug APKs against the local backend |
+| `Setup/Build-DebugApk.ps1` | Builds and installs the Flex / Driver debug APKs against the local backend; skips the build when the app's sources didn't change |
+| `Setup/Clear-EmulatorCache.ps1` | Frees disk space: Quick Boot snapshots and emulator temp files, optionally a factory reset (see [Freeing disk space](#freeing-disk-space)) |
+| `Setup/Remove-UnusedEmulatorFiles.ps1` | Frees disk space: broken AVDs and system images no AVD uses |
 | `Setup/Run-Suite.ps1` | A whole run in one command: Aspire, Appium, grid, APKs, tests, results (see [One-command run](#one-command-run-setuprun-suiteps1)) |
 | `Setup/mobile.runsettings` | `dotnet test` settings used by `Run-Suite.ps1` (NUnit warnings reported as Passed) |
 | `Setup/azure-pipelines.yml` | Azure DevOps pipeline for a self-hosted agent, local Aspire backend (see [Running in Azure DevOps](#running-in-azure-devops)) |
@@ -300,7 +302,9 @@ adb -s emulator-5562 install -r "$ui\Flex\android\app\build\outputs\apk\debug\ap
 adb -s emulator-5564 install -r "$ui\Driver-App\android\app\build\outputs\apk\debug\app-debug.apk"
 ```
 
-The script expects the RecoveryTrac UI repo at `C:\Users\adrian.rojas\tetratec\Aspire\RecoveryTrac.UI` (override with `-UiPath`) and JDK 21 at the Eclipse Adoptium path (override with `-JavaHome`). It always does a **clean** Gradle build, because an incremental build once produced an APK that crashed on start (*ClassNotFoundException: MainActivity*).
+The script expects the RecoveryTrac UI repo at `C:\Users\adrian.rojas\tetratec\Aspire\RecoveryTrac.UI` (override with `-UiPath`) and JDK 21 at the Eclipse Adoptium path (override with `-JavaHome`). When it builds, it always does a **clean** Gradle build, because an incremental build once produced an APK that crashed on start (*ClassNotFoundException: MainActivity*).
+
+**Skipping unchanged builds:** before building, the script fingerprints what the APK is built from: the app's folder, `libs/` and the repo's root files (committed, modified or untracked), plus the script's own settings. Other apps, docs, Markdown files and the files `cap sync` rewrites don't count. When the fingerprint matches the last build's (`app-debug.apk.fingerprint` next to the APK), it skips the build and installs the existing APK. Add `-Force` to build anyway.
 
 What the script does:
 - **Flex:** builds the web bundle with every service URL set to its local Aspire port (`NG_APP_*` variables, the same ones Aspire passes to web Flex), then `cap sync android`, `gradlew clean assembleDebug` and install.
@@ -363,18 +367,19 @@ dotnet test --filter "Name~E2E_Node3" --logger "console;verbosity=detailed"
 
 The cases run at the same time: `[Parallelizable(ParallelScope.Children)]`, up to `LevelOfParallelism(3)` in `Properties/AssemblyInfo.cs`, which is exactly three nodes. Raise it if you add a fourth node. Each case uses the node pair it names, not the shared node pool. A run takes about **4–5 minutes** per node, and the parallel run takes about as long as the slower node. Leave the emulators alone while it runs.
 
-**BLE handoff (TC-12 / TC-13)**, Node 2 and Node 3 in parallel. Only those two node pairs need to be running (`.\Setup\Start-MobileGrid.ps1 -Nodes 2,3`):
+**BLE handoff (TC-12 / TC-13)**, Node 2 then Node 3 (one after the other). Only those two node pairs need to be running (`.\Setup\Start-MobileGrid.ps1 -Nodes 2,3`):
 
 ```powershell
 dotnet test --filter "Category=BLE" --logger "console;verbosity=normal"
+dotnet test --filter "FullyQualifiedName~BLE_TC12&FullyQualifiedName~Node3"   # one node only
 ```
 
-A run takes about **4 minutes** per node. On a pass, the console shows the truck code, the send status and the timing, for example:
+A run takes about **4–5 minutes** per node. On a pass, the console shows the Driver App card Flex picked, the send status and the timing, for example:
 
 ```
-🚚 Driver app is waiting for the monitor as RTD-JB03.
-📡 Flex: 'Sent to RTD-JB03' after 3.1 s.
-🚚 Driver app: current load 9T4F-LC-1007 after 3.4 s (toast: 'Load 9T4F-LC-1007 received.').
+📡 Flex lists this node's Driver App as 'GQZS' (Driver App / ~0 ft away / Identity Code: GQZS) after 0.4 s.
+📡 Flex: 'Sent to GQZS' after 2.9 s.
+🚚 Driver app: current load 65Z9-LC-1002 after 3.2 s (toast: 'Load 65Z9-LC-1002 received.').
 ```
 
 **#10082 R1-C1 discoverability (NDT-1)** needs only Node 2 (`.\Setup\Start-MobileGrid.ps1 -Nodes 2`). Run it on its own, about **2–3 minutes per test**:
@@ -399,15 +404,16 @@ Does everything in [Before each Mobile run](#before-each-mobile-run), then runs 
 
 1. **Aspire:** uses it when its service ports answer, and waits when only some do (an AppHost still starting). Otherwise it starts `RecoveryTrac.AppHost` and waits for the ports. If Docker isn't running, it starts Docker Desktop first and waits for it (up to 3 minutes).
 2. **Appium:** uses the one on port 4723, or starts it with the right `--allow-insecure` form for its version.
-3. **Grid:** `Start-MobileGrid.ps1 -Nodes ...`.
-4. **Apps:** with `-RebuildApks`, builds both debug APKs (`Build-DebugApk.ps1`) and installs them on every node. With `-FlexApk` / `-DriverApk`, installs those. Otherwise keeps what's installed.
+3. **Grid:** `Start-MobileGrid.ps1 -Nodes ...`. When step 4 installs the apps, an emulator still missing one is reported (*not installed yet*) but doesn't stop the run.
+4. **Apps:** with `-RebuildApks`, builds both debug APKs (`Build-DebugApk.ps1`, skipping an app whose sources didn't change since its last build; `-ForceRebuild` builds anyway) and installs them on every node. With `-FlexApk` / `-DriverApk`, installs those. Otherwise keeps what's installed.
 5. **Bluetooth:** on each emulator of the run, closes crash dialogs and restarts Bluetooth when it is off, when Android's Bluetooth service crashed, or when the shared Bluetooth simulator (`netsimd`) restarted after the emulator booted. That restart makes every running emulator's Bluetooth abort (*"Bluetooth keeps stopping"*, `Hardware Error Event with code 0x42`). If Bluetooth doesn't come back, cold-boot the grid: `.\Setup\Start-MobileGrid.ps1 -Stop`, then `.\Setup\Start-MobileGrid.ps1 -Nodes 2,3 -ColdBoot`.
 6. **Tests:** `dotnet test` with `-Filter` and `Setup/mobile.runsettings`.
 7. **Results** go to one folder (default `TestResults/run`): `mobile-tests.trx`, the HTML reports, baselines, failure screenshots, and the Aspire / Appium logs when it started them.
 
 ```powershell
 .\Setup\Run-Suite.ps1                                    # Category=BLE on nodes 2,3, apps as installed
-.\Setup\Run-Suite.ps1 -RebuildApks                       # fresh debug APKs from the UI repo first
+.\Setup\Run-Suite.ps1 -RebuildApks                       # debug APKs from the UI repo first (only the apps that changed)
+.\Setup\Run-Suite.ps1 -RebuildApks -ForceRebuild         # build both even when nothing changed
 .\Setup\Run-Suite.ps1 -Filter "Category=BLE-R1-C1" -Nodes 2
 .\Setup\Run-Suite.ps1 -Filter "Category=BLE-R1-C2" -Nodes 2
 .\Setup\Run-Suite.ps1 -Target QA -FlexApk <flex.apk> -DriverApk <driver.apk>   # QA services, no Aspire
@@ -416,6 +422,24 @@ Does everything in [Before each Mobile run](#before-each-mobile-run), then runs 
 ```
 
 The exit code is the `dotnet test` one (non-zero when a test failed). `-AspirePath` (default `C:\Users\adrian.rojas\tetratec\Aspire`) and `-UiPath` (default its `RecoveryTrac.UI\apps`) point at other checkouts. `-Target QA` needs APKs built against the QA services; the BLE code isn't in QA yet, so use `Local` for the BLE tests.
+
+### Freeing disk space
+
+The emulators fill the disk over time (Quick Boot snapshots of 2–4 GB per AVD, user data up to 10 GB per AVD, unused system images). Two scripts clean them up. Both refuse to run while an emulator is open, so stop the grid first, and both accept `-WhatIf` to list what would go and how big it is.
+
+```powershell
+.\Setup\Start-MobileGrid.ps1 -Stop
+.\Setup\Clear-EmulatorCache.ps1 -WhatIf                  # preview
+.\Setup\Clear-EmulatorCache.ps1                          # Quick Boot snapshots, lock files, emulator temp / crash files
+.\Setup\Clear-EmulatorCache.ps1 -WipeData                # also factory-reset the AVDs (biggest saving)
+.\Setup\Clear-EmulatorCache.ps1 -Avd Pixel_8,Pixel_9     # only these AVDs
+.\Setup\Remove-UnusedEmulatorFiles.ps1 -Confirm:$false   # broken AVDs (no config.ini) + system images no AVD uses
+.\Setup\Remove-UnusedEmulatorFiles.ps1 -RemoveAvd Old_Phone   # also delete a working AVD you name
+```
+
+- **Clear-EmulatorCache:** everything it deletes is rebuilt by the emulator. The next start is a cold boot (about a minute longer). With `-WipeData` the apps, their data, granted permissions and the Google sign-in are gone: reinstall the APKs (`Run-Suite.ps1 -RebuildApks` handles emulators without the apps) before the next run.
+- **Remove-UnusedEmulatorFiles:** keeps every system image a remaining AVD is built on. A deleted image can be downloaded again from Android Studio's SDK Manager.
+- **Outside the emulators:** the UI repo's Angular build cache (`apps/*/.angular`, often 10+ GB) and `%USERPROFILE%\.gradle\caches` are safe to delete; the next build just takes longer.
 
 ### How Mobile mode handles the camera
 
@@ -519,8 +543,10 @@ The local-Aspire pipeline runs nightly on weekdays and by hand (parameters: filt
 | Driver App stuck on the tutorial (Android 13+) | The WebView SKIP tap failed. Look for the SKIP button in the Driver failure `.html` |
 | `Grid_Node2_Driver (emulator-5560) is not responding to adb` | That emulator isn't running. Check with `adb devices` and `adb -s <serial> emu avd name`. Emulators started by hand take the first free port, so an AVD can end up on another node's port. Fix it with `.\Setup\Start-MobileGrid.ps1 -Stop`, then start the grid with the script |
 | `No configured Flex account matches 'testuser4'` | A BLE fixture names an account that isn't in user-secrets. Set it under any `TestSettings:<name>:LoginEmail` / `LoginPassword` |
-| BLE: *Flex did not find the Driver app 'RTD-XXXX' after 3 Bluetooth searches* | The Driver App stopped advertising (it advertises for 2 minutes after Receive via Bluetooth), or the emulator's Bluetooth is off. The message lists the truck codes Flex did find |
-| BLE: `sendResult` is *"Waiting for confirmation…"* or a failure message | Flex sent the ticket but the Driver App didn't confirm it. Check that the Driver emulator is responsive and run again |
+| BLE: *Precondition not met: Flex did not list this node's Driver App within 25 s* | The Driver App isn't advertising: its Bluetooth is off, or it lacks Nearby devices access (`BLUETOOTH_ADVERTISE` / `BLUETOOTH_CONNECT`; the tests grant it, opening the app by hand doesn't). Grant it with `adb -s <udid> shell pm grant com.tetratech.recoverytracdriver android.permission.BLUETOOTH_ADVERTISE` (same for `BLUETOOTH_CONNECT`) |
+| BLE: *Flex could not send ticket … to the Driver App* | Flex shows the failure reason instead of *Sent to …*. Check that the Driver emulator is responsive and run again |
+| Flex: *"Unable to create a new form document."* (log: `reading 'deviceID'`) | Flex was reinstalled but kept its old login, so the post-login sync that creates its device ID never ran. Clear Flex's data (`adb -s <udid> shell pm clear com.tetratech.recoverytracflex`) so the test logs in fresh |
+| Flex shows *No nearby Driver Apps found.* when testing by hand | The Driver App must be open (foreground) and have Nearby devices access, see above |
 | `10082-NDT-1-… not met` | Expected until R1: the Driver App doesn't advertise without *Receive via Bluetooth*. If `NDT1_Control_…` also fails, the search itself is broken (check that the Flex picker opens and that the Driver emulator's Bluetooth is on) |
 | `10082-NDT-2/3/5/6/10-… not met` | Expected until R1: the POC picker has other texts, a 15-s search, a progress bar and no Cancel. A `Precondition not met: Flex did not list this node's Driver App` failure is different: the Driver App isn't advertising (check `NDT1_Control_…` and the Driver emulator's Bluetooth) |
 | Flex emulator left with Bluetooth off | An NDT-6 test was killed before its `finally` ran. Turn it back on with `adb -s <udid> shell cmd bluetooth_manager enable` |

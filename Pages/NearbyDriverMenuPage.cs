@@ -80,7 +80,11 @@ public class NearbyDriverMenuPage : BasePage
     public const string SendingDataText = "Sending data…";
     public const string Cancel = "Cancel";
     public const string NoSessionPrimary = "Driver App";
+    public const string LoadingTruckDetails = "Loading truck details…";
     public const string BluetoothAccessText = "Flex needs Bluetooth access to find and connect to nearby Driver Apps.";
+    public const string ContinueText = "Continue";
+    public const string Done = "Done";
+    public const string SentPrefix = "Sent to ";
 
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
 

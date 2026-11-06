@@ -4,7 +4,8 @@
 # then the results (TRX, HTML report, baselines, failure screenshots) gathered into one folder.
 #
 #   .\Setup\Run-Suite.ps1                                         # Local Aspire, nodes 2,3, Category=BLE, apps as installed
-#   .\Setup\Run-Suite.ps1 -RebuildApks                            # also build the debug APKs and install them on every node
+#   .\Setup\Run-Suite.ps1 -RebuildApks                            # also build the debug APKs (if their sources changed) and install them on every node
+#   .\Setup\Run-Suite.ps1 -RebuildApks -ForceRebuild              # build them even when nothing changed
 #   .\Setup\Run-Suite.ps1 -Filter "Category=BLE-R1-C1" -Nodes 2
 #   .\Setup\Run-Suite.ps1 -Target QA -FlexApk <flex.apk> -DriverApk <driver.apk>   # deployed QA services, no Aspire
 #   .\Setup\Run-Suite.ps1 -Headless -Teardown                     # pipelines: no windows, stop what was started
@@ -28,6 +29,8 @@ param(
     [string]$ResultsDirectory = (Join-Path $PSScriptRoot "..\TestResults\run"),
     # Local: build both debug APKs from the UI repo and install them on every node
     [switch]$RebuildApks,
+    # With -RebuildApks: build both apps even when their sources did not change since the last build
+    [switch]$ForceRebuild,
     # QA (or a Local run with prebuilt APKs): installed on every node, replacing what is there
     [string]$FlexApk,
     [string]$DriverApk,
@@ -273,7 +276,9 @@ try {
     # 3. Emulator grid
     # --------------------------------------------------------------------------
     Write-Step "Emulator grid (nodes $($Nodes -join ', '))"
-    & (Join-Path $PSScriptRoot "Start-MobileGrid.ps1") -Nodes $Nodes -Headless:$Headless
+    # Step 4 installs both apps in these cases, so an emulator still missing one is fine here
+    $appsInstalledLater = $RebuildApks -or ($FlexApk -and $DriverApk)
+    & (Join-Path $PSScriptRoot "Start-MobileGrid.ps1") -Nodes $Nodes -Headless:$Headless -AppsInstalledLater:$appsInstalledLater
     if ($LASTEXITCODE -ne 0) { throw "The emulator grid did not start." }
 
     # --------------------------------------------------------------------------
@@ -291,7 +296,8 @@ try {
             try { pnpm install --frozen-lockfile; if ($LASTEXITCODE -ne 0) { throw "pnpm install failed." } }
             finally { Pop-Location }
         }
-        $buildArgs = @{ UiPath = $UiPath }
+        # Each app is built only when its sources changed since its last build, unless -ForceRebuild
+        $buildArgs = @{ UiPath = $UiPath; Force = [bool]$ForceRebuild }
         if ($JavaHome) { $buildArgs.JavaHome = $JavaHome }
         # Builds and installs on the first node; the others get the same APK below
         & (Join-Path $PSScriptRoot "Build-DebugApk.ps1") -App Flex -Udid $flexUdids[0] @buildArgs
