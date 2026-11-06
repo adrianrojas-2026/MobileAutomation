@@ -49,6 +49,7 @@ namespace RecoveryTrac.AutomatedTests
                 return;
             }
             string flexUdid = AdbHelper.GetUdid(flexAndroid)!;
+            BluetoothHelper.EnsureBluetoothOn(flexUdid);
 
             // So Android asks for Nearby devices when Flex first uses Bluetooth, as after a fresh install. Revoking a
             // permission stops the app, so relaunch it before logging in
@@ -73,6 +74,10 @@ namespace RecoveryTrac.AutomatedTests
             // STEP 19 (BLE): Driver app - Receive via Bluetooth and read the truck code it advertises
             // -------------------------------------------------------------------------
             var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
+            if (driverApp is AndroidDriver driverDevice)
+            {
+                BluetoothHelper.EnsureBluetoothOn(AdbHelper.GetUdid(driverDevice)!);
+            }
             driverHome.CancelStaleLoadIfPresent();
             driverHome.ReceiveViaBluetooth();
             if (driverApp is AndroidDriver driverAndroid)
