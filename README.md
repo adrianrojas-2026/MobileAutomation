@@ -86,6 +86,7 @@ Each run saves its measurements to `bin/Debug/net10.0/Baselines/BLE-TC12_<node>_
 | `NDT1_P01_N02_DriverOnHome_IsDiscoverable_WithoutReceiveMode` | 10082-NDT-1-P01, N02 | Open on Home, *Receive via Bluetooth* never tapped; no alert, pairing request or permission dialog on its screen | ✅ |
 | `NDT1_P02_DriverOnEveryPage_StaysDiscoverable` | 10082-NDT-1-P02 | Home, then Receipts, then back on Home: listed on each | ✅ |
 | `NDT1_N01_DriverBeforeHome_IsDiscoverable` | 10082-NDT-1-N01 | Open on Welcome, then on the Tutorial, before Home (the Tutorial only when this emulator still shows it; otherwise a warning) | ✅ |
+| `NDT1_N01_DriverOnWelcome_ReceivesLoad_AndNotifiesDriver` | 10082-NDT-1-N01 (+ Story 4.4 receipt toast) | Driver App left on Welcome receives a new ticket: Flex shows *Data sent to…*, the Driver App shows *Load &lt;n&gt; received.* while still on Welcome, and after GET STARTED Home shows the load with the same payload as its QR | — |
 | `NDT1_P03_DriverBackFromBackground_IsDiscoverableAgain` | 10082-NDT-1-P03 | Listed, then sent to the background, then brought back with nothing tapped. Whether it stays listed while in the background is only recorded (today: not listed) | ✅ |
 | `NDT1_Control_DriverStarted_IsFoundByDifference` | Control | Started the way the transfer tests start it (the POC's receive mode only in a build that still has the button) | ✅ |
 
@@ -112,12 +113,15 @@ Category `BLE-R1-C2` covers Flex's side of the transfer: the discovery menu, the
 
 **Pending: `BLE-R1-C2-Pending`.** The two NDT-10 tests (progress view and Cancel) are in their own category until Flex ships **Story 4.8**. Until then the send view keeps the earlier *Send via Bluetooth* title, *Connecting to <code>…* / *Sending…* with a progress bar, and only a disabled *Close*, so they fail on purpose (each failure names its NDT-10 requirement). `Category=BLE-R1-C2` doesn't include them. Run them on purpose with `-Filter "Category=BLE-R1-C2-Pending"`; once 4.8 is in the APK and they pass, move `NearbyTransferProgressTests` back to `BLE-R1-C2`.
 
+**Defects: `BLE-R1-C2-Defects`.** Tests for Driver App defects found during BLE testing. They fail until the defect is fixed, so `Category=BLE-R1-C2` doesn't include them. Run them with `-Filter "Category=BLE-R1-C2-Defects" -Nodes 2`.
+
 | Test | Requirements | What it does |
 |---|---|---|
 | `NearbyDiscoveryMenuTests.NDT2_NoDriverApp_NoResultsAfter10s_TryAgain_DismissStopsDiscovery` | NDT-2-P01, P02, E01, E02, E03, E05, P16, N04 | No Driver App nearby: searching starts at once, the no-results state appears after 10 s, Try Again starts a new 10-s attempt, and dismissing mid-search stops discovery and leaves the ticket as it was |
 | `NearbyDiscoveryMenuTests.NDT2_NDT3_DriverAppFound_ListedWhileDiscoveryContinues` | NDT-2-P03, E06, P04, N02, N01; NDT-3-P01, P03, P21, P12 | The Driver App's card shows under the running search and stays past 10 s while the search continues. It shows *Driver App*, its *Identity Code* and a distance, and disappears by itself once the Driver App closes |
 | `NearbyTransferProgressTests.NDT10_SelectDriverApp_StopsDiscovery_ShowsSendDataProgress` (**pending**) | NDT-2-P14, N04; NDT-10-P01, P02, P03, P04, P06, P07, N01 | Picking the Driver App stops discovery. The same menu then shows *Send Data*, *Connecting…* and *Sending data…* with a spinner and Cancel, and no percentage |
 | `NearbyTransferProgressTests.NDT10_CancelDuringTransfer_ReturnsToUnchangedTicket` (**pending**) | NDT-10-P08, N02, P09, P10, N03, E01 | A tap outside and Escape don't dismiss the menu. Cancel returns to the unchanged ticket with no load on the Driver App, or success wins if the Driver App committed first |
+| `NearbyReceiveDuringAbandonTests.NearbyLoad_ReceivedWhileAbandonPromptOpen_IsKeptAfterConfirm` (**defect**) | — (pending PO confirmation) | The Driver App holds load A, and the driver taps Cancel Load. While Confirm counts down, Flex sends load B, and the Driver App shows *Load B received.* Tapping Confirm must leave B as the active load, with the same payload as its QR. Today it removes B, and Home shows no load |
 | `NearbyRuntimeAccessTests.NDT6_BluetoothOff_ShowsAccessFlow_ThenSearchesOnceOn` | NDT-6-P01, P02, P03, P08, N01, P09 | Bluetooth off: the Bluetooth Access flow appears instead of a search; once Bluetooth is on, the search starts without tapping the Nearby action again |
 | `NearbyRuntimeAccessTests.NDT6_BluetoothOff_CancelAccessFlow_ReturnsWithoutSearching` | NDT-6-E02 | Cancel in the access flow returns to the ticket list and no search starts, even after Bluetooth comes back |
 | `NearbyRuntimeAccessTests.NDT6_NearbyAccessDenied_DoesNotSearch` | NDT-6-P02, E03, N01 | The user refuses Nearby devices access: no search starts |

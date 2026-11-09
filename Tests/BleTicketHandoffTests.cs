@@ -100,22 +100,11 @@ namespace RecoveryTrac.AutomatedTests
             string driverLabel = card.Key;
 
             own.Home.StartRecordingToasts();
-            var sendTimer = System.Diagnostics.Stopwatch.StartNew();
-            menu.SelectCard(card.Key);
-            // Sent shows 'Sent to <Identity Code>' with Done; a failure shows its reason with Try Again
-            var final = menu.WaitFor(s => !s.Open || s.Lines.Any(l => l.StartsWith(SentPrefix, StringComparison.Ordinal)) || s.HasButton(TryAgain), 60);
-            double sentSeconds = sendTimer.Elapsed.TotalSeconds;
-            string sendResult = final == null
-                ? $"no result within 60 s ({menu.Snapshot()})"
-                : final.Lines.FirstOrDefault(l => l.StartsWith(SentPrefix, StringComparison.Ordinal))
-                  ?? string.Join(" | ", final.Lines.Where(l => l != final.Title && !l.Equals(TryAgain, StringComparison.OrdinalIgnoreCase)
-                                                                && !l.Equals("Close", StringComparison.OrdinalIgnoreCase)));
-            Console.WriteLine($"📡 Flex: '{sendResult}' after {sentSeconds:N1} s.");
-            Assert.That(sendResult, Does.StartWith(SentPrefix), $"Flex could not send ticket {ticketId} to the Driver App '{driverLabel}'.");
-            if (card.IdentityCode is { } identityCode)
-            {
-                Assert.That(sendResult, Is.EqualTo(SentPrefix + identityCode), "Flex reports a different Driver App than the one picked.");
-            }
+            var sent = SendToCard(menu, card);
+            var sendTimer = sent.SinceSelect;
+            double sentSeconds = sent.Seconds;
+            string sendResult = sent.Result;
+            AssertSentTo(sent, card, ticketId);
 
             // -------------------------------------------------------------------------
             // STEP 23 (BLE): the Driver app shows the ticket as its current load, with the ticket's QR
@@ -127,9 +116,7 @@ namespace RecoveryTrac.AutomatedTests
             Console.WriteLine($"🚚 Driver app: current load {currentLoad} after {loadedSeconds:N1} s (toast: '{toast}').");
 
             // Reference: the payload of the same ticket's QR, which the Bluetooth send must carry unchanged
-            menu.ClickButton(Done);
-            Assert.That(menu.WaitFor(s => !s.Open, 10), Is.Not.Null, $"The Nearby menu did not close after '{Done}' ({menu.Snapshot()}).");
-            menu.StopRecording();
+            CloseMenuAfterSend(menu, sent);
             flow.Forms.OpenSubmittedCardQr(ticketId);
             string flexPayload = QrScanFeed.Decode(flow.TicketForm.GetQrCodePng(), DriverFactory.DriverFlex);
             flow.TicketForm.CloseQrModal();
