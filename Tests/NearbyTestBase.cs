@@ -15,6 +15,10 @@ namespace MobileAutomation.Tests.Tests;
 public record OwnDriverApp(string Key, IWebDriver App, DriverHomePage Home, Stopwatch SinceAttempt, double FoundAfter, MenuSnapshot WhenFound,
     IReadOnlySet<string> Others);
 
+// What Flex reported after a Driver App card was picked: its success toast / 'Sent to' line, or the failure's reason.
+// SinceSelect keeps running from the tap; MenuStillOpen is true when Flex kept the menu open (older builds: Done)
+public record SendOutcome(string Result, Stopwatch SinceSelect, double Seconds, bool MenuStillOpen);
+
 // Feature #10082 Nearby tests (R1-C1 discoverability, R1-C2 transfer core) on Node 2 with testuser2. All emulators
 // share one simulated Bluetooth, so these fixtures run on their own and stop the Driver app on the other grid
 // emulators; a Driver App Flex lists is then the one this test started (checked by difference, as other phones
@@ -65,7 +69,9 @@ public abstract class NearbyTestBase : DualAppTestBase
     // R1-C2: Flex logged in on the Submitted list of 'Load - Collection', with Bluetooth on. grantNearby gives Flex its
     // Nearby devices access up front, so the shared Bluetooth Access flow (NDT-6, tested on its own) stays out of the
     // way; without it the access is revoked and Android asks again, as after a fresh install
-    protected (CollectionLoadTicketFlow Flow, string TicketId, string FlexUdid) StartFlexOnSubmittedTicket(string purpose, bool grantNearby = true)
+    // freshTicket submits a new ticket instead of reusing one, for tests that check the load the Driver App stores
+    protected (CollectionLoadTicketFlow Flow, string TicketId, string FlexUdid) StartFlexOnSubmittedTicket(string purpose, bool grantNearby = true,
+        bool freshTicket = false)
     {
         if (DriverFactory.DriverFlex is not AndroidDriver flexAndroid)
         {
@@ -91,7 +97,17 @@ public abstract class NearbyTestBase : DualAppTestBase
 
         var flow = new CollectionLoadTicketFlow(DriverFactory.DriverFlex, _wait.Value!, Node);
         flow.LoginAndEnterWebView();
-        string ticketId = AnySubmittedTicket(flow, purpose);
+        string ticketId;
+        if (freshTicket)
+        {
+            var draft = flow.FillAndSubmitTicket($"Automated test - {purpose} {Node} {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            flow.TicketForm.DeclineQrGeneration();
+            ticketId = flow.VerifyTicketSubmittedAndSynced(draft);
+        }
+        else
+        {
+            ticketId = AnySubmittedTicket(flow, purpose);
+        }
         return (flow, ticketId, flexUdid);
     }
 
@@ -137,16 +153,41 @@ public abstract class NearbyTestBase : DualAppTestBase
         return (driverApp, driverHome);
     }
 
+    // This node's Driver app on its Welcome screen (GET STARTED not tapped) with no load, in its WEBVIEW context and
+    // recording toasts. A stale load can only be cancelled on Home, so it goes there first and then cold-starts the
+    // app, which opens on Welcome again. Inconclusive when the app does not come back on Welcome
+    protected static (IWebDriver App, DriverHomePage Home) StartDriverAppOnWelcome()
+    {
+        var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
+        var android = (AndroidDriver)driverApp;
+        BluetoothHelper.EnsureBluetoothOn(AdbHelper.GetUdid(android)!);
+        driverHome.CancelStaleLoadIfPresent();
+
+        android.Context = "NATIVE_APP";
+        string package = DriverAppFlow.DriverPackage(android);
+        android.TerminateApp(package);
+        android.ActivateApp(package);
+        Assume.That(new DriverOnboardingPage(driverApp).IsWelcomeScreenDisplayed(60), Is.True,
+            "The Driver app did not open on its Welcome screen after a cold start, so this case cannot be set up.");
+
+        DriverFactory.SwitchToWebViewContext(driverApp);
+        Assume.That(android.Context, Does.StartWith("WEBVIEW"), "Could not switch to the Driver app's WEBVIEW context on Welcome.");
+        IonicToasts.StartRecording(driverApp);
+        Console.WriteLine("🚚 Driver app on Welcome (GET STARTED not tapped), no load, recording toasts.");
+        return (driverApp, driverHome);
+    }
+
     // With the Nearby menu open and no grid Driver app running: notes what this first attempt lists (other devices),
-    // starts this node's Driver app, starts another attempt and returns the new card, which is this node's Driver App
-    protected static OwnDriverApp FindOwnDriverApp(NearbyDriverMenuPage menu)
+    // starts this node's Driver app (on Home unless startDriverApp says otherwise), starts another attempt and returns
+    // the new card, which is this node's Driver App
+    protected static OwnDriverApp FindOwnDriverApp(NearbyDriverMenuPage menu, Func<(IWebDriver App, DriverHomePage Home)>? startDriverApp = null)
     {
         Assert.That(menu.IsOpen(), Is.True, "The Nearby menu did not open after the Nearby action was tapped.");
         var firstAttemptEnd = menu.WaitFor(s => s.Open && s.Searching == null, 20) ?? menu.Snapshot();
         var others = firstAttemptEnd.Cards.Select(c => c.Key).ToHashSet();
         Console.WriteLine($"📡 With no grid Driver app running Flex lists: [{string.Join(", ", others)}].");
 
-        var (driverApp, driverHome) = StartDiscoverableDriverApp();
+        var (driverApp, driverHome) = (startDriverApp ?? StartDiscoverableDriverApp)();
 
         if (!menu.RestartSearch())
         {
@@ -176,5 +217,61 @@ public abstract class NearbyTestBase : DualAppTestBase
         var card = ready!.Cards.First(Ready);
         Console.WriteLine($"📡 Driver App card ready: '{card.Key}' ({string.Join(" / ", card.Lines)}).");
         return card;
+    }
+
+    // Picks the card and waits for Flex's outcome. FEAT-LDT-10: success closes the menu and Flex shows the toast
+    // 'Data sent to Driver App <Identity Code>.' (or '... Truck <Truck Number>.'). Earlier builds kept the menu open
+    // with 'Sent to <Identity Code>' and Done. A failure shows its reason with Try Again
+    protected static SendOutcome SendToCard(NearbyDriverMenuPage menu, DriverCard card)
+    {
+        IonicToasts.StartRecording(DriverFactory.DriverFlex);
+        var sinceSelect = Stopwatch.StartNew();
+        menu.SelectCard(card.Key);
+        var final = menu.WaitFor(s => !s.Open || s.Lines.Any(l => l.StartsWith(NearbyDriverMenuPage.SentPrefix, StringComparison.Ordinal))
+                                      || s.HasButton(NearbyDriverMenuPage.TryAgain), 60);
+        double seconds = sinceSelect.Elapsed.TotalSeconds;
+        string result = final switch
+        {
+            null => $"no result within 60 s ({menu.Snapshot()})",
+            { Open: false } => IonicToasts.Message(DriverFactory.DriverFlex, timeoutSeconds: 5) ?? "the Nearby menu closed without a toast",
+            _ => final.Lines.FirstOrDefault(l => l.StartsWith(NearbyDriverMenuPage.SentPrefix, StringComparison.Ordinal))
+                 ?? string.Join(" | ", final.Lines.Where(l => l != final.Title && !l.Equals(NearbyDriverMenuPage.TryAgain, StringComparison.OrdinalIgnoreCase)
+                                                               && !l.Equals("Close", StringComparison.OrdinalIgnoreCase)))
+        };
+        Console.WriteLine($"📡 Flex: '{result}' after {seconds:N1} s.");
+        return new SendOutcome(result, sinceSelect, seconds, final is { Open: true });
+    }
+
+    // Flex reported success, naming the Driver App that was picked
+    protected static void AssertSentTo(SendOutcome sent, DriverCard card, string ticketId)
+    {
+        Assert.That(sent.Result, Does.StartWith(NearbyDriverMenuPage.DataSentPrefix).Or.StartWith(NearbyDriverMenuPage.SentPrefix),
+            $"Flex could not send ticket {ticketId} to the Driver App '{card.Key}'.");
+        if (sent.Result.StartsWith(NearbyDriverMenuPage.SentPrefix, StringComparison.Ordinal))
+        {
+            if (card.IdentityCode is { } code)
+            {
+                Assert.That(sent.Result, Is.EqualTo(NearbyDriverMenuPage.SentPrefix + code), "Flex reports a different Driver App than the one picked.");
+            }
+        }
+        else if (card.Primary == NearbyDriverMenuPage.NoSessionPrimary && card.IdentityCode is { } code)
+        {
+            Assert.That(sent.Result, Is.EqualTo($"{NearbyDriverMenuPage.DataSentToDriverApp}{code}."), "Flex reports a different Driver App than the one picked.");
+        }
+        else
+        {
+            Assert.That(sent.Result, Does.StartWith(NearbyDriverMenuPage.DataSentToTruck), "Flex's success toast for a Driver App with a Driver Session names no truck.");
+        }
+    }
+
+    // Closes the Nearby menu when Flex kept it open after the send (older builds: Done) and stops recording it
+    protected static void CloseMenuAfterSend(NearbyDriverMenuPage menu, SendOutcome sent)
+    {
+        if (sent.MenuStillOpen)
+        {
+            menu.ClickButton(NearbyDriverMenuPage.Done);
+            Assert.That(menu.WaitFor(s => !s.Open, 10), Is.Not.Null, $"The Nearby menu did not close after '{NearbyDriverMenuPage.Done}' ({menu.Snapshot()}).");
+        }
+        menu.StopRecording();
     }
 }

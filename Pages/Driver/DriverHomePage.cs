@@ -1,6 +1,7 @@
 using OpenQA.Selenium;
 using OpenQA.Selenium.Appium.Android;
 using OpenQA.Selenium.Support.UI;
+using MobileAutomation.Tests.Utilities;
 
 namespace MobileAutomation.Tests.Pages.Driver;
 
@@ -128,44 +129,12 @@ public class DriverHomePage : BasePage
         }
     }
 
-    // Toasts last a couple of seconds and can be gone before the test gets to read them (it happened with two node
-    // pairs running in parallel), so record each one as Ionic adds it. Call before the action that raises the toast
-    public void StartRecordingToasts()
-    {
-        const string script =
-            "if (!window.__rtToasts) {" +
-            "  window.__rtToasts = [];" +
-            "  const rec = t => {" +
-            "    const m = (t.message || t.shadowRoot?.querySelector('.toast-message')?.textContent || '').toString().trim();" +
-            "    if (m && !window.__rtToasts.includes(m)) window.__rtToasts.push(m);" +
-            "  };" +
-            "  new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => {" +
-            "    if (n.tagName === 'ION-TOAST') { rec(n); n.addEventListener('ionToastDidPresent', () => rec(n)); }" +
-            "  }))).observe(document.body, { childList: true, subtree: true });" +
-            "}" +
-            "window.__rtToasts.length = 0;";
-        ((IJavaScriptExecutor)Driver).ExecuteScript(script);
-    }
+    // Records each toast as Ionic adds it, so a short-lived one can still be read. Call before the action that raises it
+    public void StartRecordingToasts() => IonicToasts.StartRecording(Driver);
 
-    // Message of the toast on screen, e.g. "Load DG0T-LC-100H received." (Ionic renders it in the toast's shadow DOM),
-    // or the last one recorded since StartRecordingToasts when it has already closed
-    public string? ToastMessage(int timeoutSeconds = 10)
-    {
-        const string script =
-            "const t = [...document.querySelectorAll('ion-toast')].pop();" +
-            "const m = t && t.shadowRoot && t.shadowRoot.querySelector('.toast-message');" +
-            "const shown = m ? m.textContent.trim() : (t ? (t.message || '').toString() : '');" +
-            "return shown || (window.__rtToasts || []).slice(-1)[0] || null;";
-        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds));
-        try
-        {
-            return wait.Until(d => ((IJavaScriptExecutor)d).ExecuteScript(script) as string is { Length: > 0 } text ? text : null);
-        }
-        catch (WebDriverTimeoutException)
-        {
-            return null;
-        }
-    }
+    // Message of the toast on screen, e.g. "Load DG0T-LC-100H received.", or the last one recorded since
+    // StartRecordingToasts when it has already closed
+    public string? ToastMessage(int timeoutSeconds = 10) => IonicToasts.Message(Driver, timeoutSeconds);
 
     // With an active load the home button becomes Scan Receipt Code: scan the disposal ticket's QR to get the receipt
     public void ScanReceiptCode() => ClickVisible(ButtonByText("SCAN RECEIPT CODE"), "Scan Receipt Code");

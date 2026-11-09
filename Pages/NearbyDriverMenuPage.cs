@@ -85,6 +85,11 @@ public class NearbyDriverMenuPage : BasePage
     public const string ContinueText = "Continue";
     public const string Done = "Done";
     public const string SentPrefix = "Sent to ";
+    // FEAT-LDT-10 success: the menu closes and a toast shows "Data sent to Driver App {Identity Code}." (no Driver
+    // Session) or "Data sent to Truck {Truck Number}." (Flex nearby-messages.ts)
+    public const string DataSentPrefix = "Data sent to ";
+    public const string DataSentToDriverApp = "Data sent to Driver App ";
+    public const string DataSentToTruck = "Data sent to Truck ";
 
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
 

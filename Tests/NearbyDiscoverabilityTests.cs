@@ -132,6 +132,60 @@ namespace RecoveryTrac.AutomatedTests
             });
         }
 
+        // 10082-NDT-1-N01 with a transfer: the Driver app still on Welcome (GET STARTED never tapped) receives a ticket.
+        // Flex reports it sent; the Driver app tells the driver on that same screen ('Load <n> received.', shown "on
+        // whichever page is open": Driver App NearbyReceiptNotifier, Story 4.4 decision of 2026-11-05), and once the
+        // driver goes through GET STARTED the ticket is the current load, with the same payload as its QR code
+        [Test]
+        [Requirements("NDT-1-N01")]
+        public void NDT1_N01_DriverOnWelcome_ReceivesLoad_AndNotifiesDriver()
+        {
+            var (flow, ticketId, _) = StartFlexOnSubmittedTicket("Nearby send to a Driver App on Welcome", freshTicket: true);
+            string loadNumber = ticketId.TrimStart('#');
+            PrepareGridDriverApps();
+            var menu = OpenNearby(flow, ticketId);
+            var own = FindOwnDriverApp(menu, StartDriverAppOnWelcome);
+            var card = WaitForSelectableCard(menu, own);
+
+            var sent = SendToCard(menu, card);
+            AssertSentTo(sent, card, ticketId);
+
+            // Still on Welcome: what the driver was told there
+            string? toastOnWelcome = IonicToasts.Message(own.App, timeoutSeconds: 10);
+            string routeAfterSend = new Uri(own.App.Url).AbsolutePath;
+            Console.WriteLine($"🚚 Driver app after the send: route {routeAfterSend}, toast '{toastOnWelcome}'.");
+
+            // The driver now goes through GET STARTED (and the Tutorial when it shows): the load must be there
+            ((AndroidDriver)own.App).Context = "NATIVE_APP";
+            var onboarding = new DriverOnboardingPage(own.App);
+            onboarding.CompleteOnboardingIfPresent();
+            Assert.That(onboarding.IsHomeDisplayed(), Is.True,
+                $"The Driver app did not reach Home after GET STARTED > SKIP ({onboarding.DescribeLocation()}).");
+            DriverFactory.SwitchToWebViewContext(own.App);
+            string currentLoad = own.Home.WaitForActiveLoad(timeoutSeconds: 30);
+            string driverPayload = QrScanFeed.Decode(own.Home.GetCurrentLoadQrPng(), DriverFactory.DriverFlex);
+            Console.WriteLine($"🚚 Driver app on Home: current load {currentLoad}.");
+
+            // Reference: the payload of the same ticket's QR code
+            CloseMenuAfterSend(menu, sent);
+            flow.Forms.OpenSubmittedCardQr(ticketId);
+            string flexPayload = QrScanFeed.Decode(flow.TicketForm.GetQrCodePng(), DriverFactory.DriverFlex);
+            flow.TicketForm.CloseQrModal();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(routeAfterSend, Does.StartWith("/login"),
+                    "Setup: the Driver app was not on its Welcome screen when the load arrived, so this case was not tested.");
+                Assert.That(toastOnWelcome, Is.EqualTo($"Load {loadNumber} received."),
+                    $"The Driver app on Welcome received load {loadNumber} but did not tell the driver: no 'Load {loadNumber} received.' " +
+                    "(NearbyReceiptNotifier shows it on whichever page is open, Story 4.4).");
+                Assert.That(currentLoad, Is.EqualTo(loadNumber),
+                    $"After GET STARTED the Driver app's current load is not ticket {ticketId}, which it received on Welcome.");
+                Assert.That(driverPayload, Is.EqualTo(flexPayload),
+                    $"The load received on Welcome carries a different payload than ticket {ticketId}'s QR code.");
+            });
+        }
+
         // 10082-NDT-1-P03: back from the background, discoverable again without the driver re-enabling anything
         [Test]
         [Requirements("NDT-1-P03")]
