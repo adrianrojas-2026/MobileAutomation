@@ -171,27 +171,83 @@ public class DriverHomePage : BasePage
         if (homeState == "no-load") return;
 
         Console.WriteLine($"⚠️ Driver app already has an active load ('{CurrentLoad}') from an earlier run. Cancelling it...");
-        ClickVisible(CancelLoadButton, "Cancel Load");
-
-        // Confirmation alert: its confirm button counts down ("CONFIRM (5)") and stays disabled until it reaches zero
-        if (FindVisible(AlertButtons, 5) != null)
+        if (OpenAbandonLoadPrompt())
         {
-            var confirmWait = new WebDriverWait(Driver, TimeSpan.FromSeconds(20));
-            confirmWait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
-            var confirm = confirmWait.Until(d =>
-            {
-                var buttons = d.FindElements(AlertButtons).Where(b => b.Displayed).ToList();
-                var button = buttons.FirstOrDefault(b => (b.GetAttribute("class") ?? "").Contains("alert-button-role-confirm"))
-                             ?? buttons.LastOrDefault();
-                return button != null && button.Enabled && button.GetAttribute("disabled") is null ? button : null;
-            });
-            Console.WriteLine($"Driver app: confirming cancel with '{confirm.Text.Trim()}'.");
-            confirm.Click();
+            ConfirmAbandonLoad();
         }
 
         if (FindVisible(ScanQrCodeButton, 30) == null)
         {
             throw new WebDriverTimeoutException($"The Driver app still shows load '{CurrentLoad}' after tapping Cancel Load.");
+        }
+    }
+
+    // Taps Cancel Load. The app asks "Are you sure you want to abandon the active QR code?" with Cancel and a Confirm
+    // button that counts down ("CONFIRM (5)") and stays disabled until it reaches zero. False when no prompt shows up
+    public bool OpenAbandonLoadPrompt()
+    {
+        ClickVisible(CancelLoadButton, "Cancel Load");
+        return FindVisible(AlertButtons, 5) != null;
+    }
+
+    // The abandon prompt's Confirm button, or null when no prompt is open
+    private IWebElement? AbandonConfirmButton(ISearchContext d)
+    {
+        var buttons = d.FindElements(AlertButtons).Where(b => b.Displayed).ToList();
+        return buttons.FirstOrDefault(b => (b.GetAttribute("class") ?? "").Contains("alert-button-role-confirm"))
+               ?? buttons.LastOrDefault();
+    }
+
+    // The Confirm caption while the abandon prompt is open ("Confirm (3)" during the countdown), null when it is closed
+    public string? AbandonConfirmCaption
+    {
+        get
+        {
+            try { return AbandonConfirmButton(Driver)?.Text.Trim(); }
+            catch (StaleElementReferenceException) { return AbandonConfirmButton(Driver)?.Text.Trim(); }
+        }
+    }
+
+    // True while the abandon prompt's Confirm is still counting down (disabled)
+    public bool IsAbandonCountdownRunning
+    {
+        get
+        {
+            try
+            {
+                var confirm = AbandonConfirmButton(Driver);
+                return confirm != null && (!confirm.Enabled || confirm.GetAttribute("disabled") is not null);
+            }
+            catch (StaleElementReferenceException)
+            {
+                return false;
+            }
+        }
+    }
+
+    // Waits for the abandon prompt's countdown to end and taps Confirm. Returns the caption it tapped
+    public string ConfirmAbandonLoad(int timeoutSeconds = 20)
+    {
+        var confirmWait = new WebDriverWait(Driver, TimeSpan.FromSeconds(timeoutSeconds));
+        confirmWait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        var confirm = confirmWait.Until(d =>
+        {
+            var button = AbandonConfirmButton(d);
+            return button != null && button.Enabled && button.GetAttribute("disabled") is null ? button : null;
+        });
+        string caption = confirm.Text.Trim();
+        Console.WriteLine($"Driver app: confirming the abandon prompt with '{caption}'.");
+        confirm.Click();
+        return caption;
+    }
+
+    // Whether the abandon prompt is still open
+    public bool IsAbandonPromptOpen
+    {
+        get
+        {
+            try { return Driver.FindElements(AlertButtons).Any(b => b.Displayed); }
+            catch (StaleElementReferenceException) { return false; }
         }
     }
 
