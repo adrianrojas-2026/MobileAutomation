@@ -1,3 +1,4 @@
+using MobileAutomation.Tests.Reporting;
 using System.Diagnostics;
 using MobileAutomation.Tests.Drivers;
 using MobileAutomation.Tests.Flows;
@@ -12,34 +13,38 @@ namespace RecoveryTrac.AutomatedTests
 {
     // R1-C1 FEAT-NDT-1 (Driver App Nearby Discoverability, #10082): a Driver app open in the foreground can be found
     // by Flex without the driver doing anything for it - no receive mode, on any page, and again after coming back
-    // from the background. The POC only advertises after 'Receive via Bluetooth' on Home, so these fail until R1.
+    // from the background.
     //
-    // Without receive mode the Driver app shows no code to look for, so each test finds its own Driver app by
-    // difference: Flex's picker is searched with every grid Driver app stopped, then the new entry that shows up once
-    // this node's Driver app runs is the one under test. That is why the fixture runs on its own (all emulators share
-    // one simulated Bluetooth) and stops the Driver app on the other grid emulators.
+    // The Driver app shows no code to look for, so each test finds its own Driver app by difference: Flex's Nearby menu
+    // is searched with every grid Driver app stopped, then the new card that shows up once this node's Driver app runs
+    // is the one under test. That is why the fixture runs on its own (all emulators share one simulated Bluetooth) and
+    // stops the Driver app on the other grid emulators. Each check opens the Nearby menu again, so it is a new
+    // discovery attempt rather than a card still listed from an earlier one.
     [TestFixture]
     [Category("BLE-R1-C1")]
     [NonParallelizable]
     public class NearbyDiscoverabilityTests : NearbyTestBase
     {
+        // Flex on a submitted ticket, and the cards its Nearby menu lists with no grid Driver app running
+        private sealed record NearbySearch(CollectionLoadTicketFlow Flow, string TicketId, IReadOnlySet<string> Others);
+
         // 10082-NDT-1-P01 / N02: Driver app open on Home, never put in receive mode, and nothing for the driver to
         // approve on its screen while Flex finds it
         [Test]
+        [Requirements("NDT-1-P01", "NDT-1-N02")]
         public void NDT1_P01_N02_DriverOnHome_IsDiscoverable_WithoutReceiveMode()
         {
-            var (picker, othersListed) = OpenPickerWithOnlyOtherDevices();
+            var search = OpenNearbyWithOnlyOtherDevices();
 
             var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
             Assert.That(driverHome.IsReceiving, Is.False, "The Driver app opened in receive mode; this test must not use it.");
 
-            string? found = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-P01");
+            string? found = FindOwnDriverApp(search, "10082-NDT-1-P01");
             var prompts = DriverPromptsShown((AndroidDriver)driverApp);
             Assert.Multiple(() =>
             {
                 Assert.That(found, Is.Not.Null,
-                    "10082-NDT-1-P01 / N02 not met: Flex did not list the Driver app open in the foreground on Home, without " +
-                    "receive mode (the POC only advertises after 'Receive via Bluetooth').");
+                    "10082-NDT-1-P01 / N02 not met: Flex did not list the Driver app open in the foreground on Home, without receive mode.");
                 Assert.That(prompts, Is.Empty,
                     "10082-NDT-1-N02 not met: the Driver app asks the driver to approve or pair while Flex searches: " +
                     $"[{string.Join("; ", prompts)}].");
@@ -48,20 +53,21 @@ namespace RecoveryTrac.AutomatedTests
 
         // 10082-NDT-1-P02: the Driver app stays discoverable as the driver moves between its pages, Home > Receipts > Home
         [Test]
+        [Requirements("NDT-1-P02")]
         public void NDT1_P02_DriverOnEveryPage_StaysDiscoverable()
         {
-            var (picker, othersListed) = OpenPickerWithOnlyOtherDevices();
+            var search = OpenNearbyWithOnlyOtherDevices();
 
             var (_, driverHome) = DriverAppFlow.StartOnHome();
-            string? onHome = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-P02 (Home)");
+            string? onHome = FindOwnDriverApp(search, "10082-NDT-1-P02 (Home)");
 
             driverHome.OpenTab("receipts");
             Console.WriteLine("🚚 Driver app is on Receipts.");
-            string? onReceipts = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-P02 (Receipts)");
+            string? onReceipts = FindOwnDriverApp(search, "10082-NDT-1-P02 (Receipts)");
 
             driverHome.OpenTab("home");
             Console.WriteLine("🚚 Driver app is back on Home.");
-            string? backOnHome = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-P02 (back on Home)");
+            string? backOnHome = FindOwnDriverApp(search, "10082-NDT-1-P02 (back on Home)");
 
             // The requirement is about being listed, not about keeping the same name, so a changed name is only logged
             var names = new[] { onHome, onReceipts, backOnHome }.OfType<string>().Distinct().ToList();
@@ -70,9 +76,7 @@ namespace RecoveryTrac.AutomatedTests
             Assert.Multiple(() =>
             {
                 Assert.That(onHome, Is.Not.Null, "10082-NDT-1-P02 not met: Flex did not list the Driver app open on Home.");
-                Assert.That(onReceipts, Is.Not.Null,
-                    "10082-NDT-1-P02 not met: Flex did not list the Driver app open on Receipts " +
-                    "(the POC only advertises from Home, after 'Receive via Bluetooth').");
+                Assert.That(onReceipts, Is.Not.Null, "10082-NDT-1-P02 not met: Flex did not list the Driver app open on Receipts.");
                 Assert.That(backOnHome, Is.Not.Null,
                     "10082-NDT-1-P02 not met: Flex did not list the Driver app after the driver moved back to Home from Receipts.");
             });
@@ -80,14 +84,15 @@ namespace RecoveryTrac.AutomatedTests
 
         // 10082-NDT-1-N01: Driver app on Welcome and then the Tutorial, before it ever reached Home
         [Test]
+        [Requirements("NDT-1-N01")]
         public void NDT1_N01_DriverBeforeHome_IsDiscoverable()
         {
-            var (picker, othersListed) = OpenPickerWithOnlyOtherDevices();
+            var search = OpenNearbyWithOnlyOtherDevices();
 
             var driverApp = DriverAppFlow.StartOnWelcome();
             Assume.That(driverApp, Is.Not.Null, "The Driver app did not open on its Welcome screen, so this case cannot be set up.");
             Console.WriteLine("🚚 Driver app is on Welcome (GET STARTED not tapped).");
-            string? onWelcome = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-N01 (Welcome)");
+            string? onWelcome = FindOwnDriverApp(search, "10082-NDT-1-N01 (Welcome)");
 
             // With noReset an emulator that has seen the Tutorial goes from GET STARTED straight to Home, so the Tutorial
             // is only checked when it shows; the Welcome result is reported either way
@@ -99,7 +104,7 @@ namespace RecoveryTrac.AutomatedTests
             if (tutorialShown)
             {
                 Console.WriteLine("🚚 Driver app is on the Tutorial (SKIP not tapped).");
-                onTutorial = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-N01 (Tutorial)");
+                onTutorial = FindOwnDriverApp(search, "10082-NDT-1-N01 (Tutorial)");
             }
             else
             {
@@ -129,15 +134,16 @@ namespace RecoveryTrac.AutomatedTests
 
         // 10082-NDT-1-P03: back from the background, discoverable again without the driver re-enabling anything
         [Test]
+        [Requirements("NDT-1-P03")]
         public void NDT1_P03_DriverBackFromBackground_IsDiscoverableAgain()
         {
-            var (picker, othersListed) = OpenPickerWithOnlyOtherDevices();
+            var search = OpenNearbyWithOnlyOtherDevices();
 
             var (driverApp, _) = DriverAppFlow.StartOnHome();
             var driverAndroid = (AndroidDriver)driverApp;
             string driverUdid = AdbHelper.GetUdid(driverAndroid)!;
 
-            string? before = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-P03 (before backgrounding)");
+            string? before = FindOwnDriverApp(search, "10082-NDT-1-P03 (before backgrounding)");
             Assert.That(before, Is.Not.Null,
                 "10082-NDT-1-P03 precondition (P01) not met: Flex did not list the Driver app open on Home, so returning " +
                 "from the background cannot be checked.");
@@ -145,14 +151,12 @@ namespace RecoveryTrac.AutomatedTests
             // Home key, as a driver switching to another app would
             AdbHelper.Run(driverUdid, "shell input keyevent KEYCODE_HOME");
             Console.WriteLine("🚚 Driver app sent to the background.");
-            picker.Rescan();
-            string? whileBackgrounded = picker.FindTruck(code => code == before, before!, searches: 1);
             // The requirement only covers the foreground; whether it keeps advertising in the background is recorded
-            Console.WriteLine($"📡 While in the background the Driver app was {(whileBackgrounded != null ? "still" : "not")} listed.");
+            string? whileBackgrounded = FindOwnDriverApp(search, "10082-NDT-1-P03 (in the background)", timeoutSeconds: 12);
 
             driverAndroid.ActivateApp(DriverAppFlow.DriverPackage(driverAndroid));
             Console.WriteLine("🚚 Driver app back in the foreground; nothing tapped.");
-            string? after = FindOwnDriverApp(picker, othersListed, "10082-NDT-1-P03 (after returning)");
+            string? after = FindOwnDriverApp(search, "10082-NDT-1-P03 (after returning)");
 
             BaselineRecorder.Save("NDT-1-P03", Node, new { before, listedWhileBackgrounded = whileBackgrounded != null, after });
             Assert.That(after, Is.Not.Null,
@@ -160,50 +164,70 @@ namespace RecoveryTrac.AutomatedTests
                 "without the driver re-enabling discoverability.");
         }
 
-        // Control for the checks above: the same search by difference, with the Driver app in the POC's receive mode.
-        // It passes on the POC, so a failure above means the Driver app was not advertising, not that the search
-        // cannot find it
+        // Control for the checks above: the same search by difference, with the Driver app started the way the transfer
+        // tests start it (the POC's receive mode where a build still has it). A failure here means the search itself is
+        // broken (Flex's scan, the Driver emulator's Bluetooth), not a missing NDT-1 behavior
         [Test]
-        public void NDT1_Control_DriverInReceiveMode_IsFoundByDifference()
+        [Requirements()]
+        public void NDT1_Control_DriverStarted_IsFoundByDifference()
         {
-            var (picker, othersListed) = OpenPickerWithOnlyOtherDevices();
+            var search = OpenNearbyWithOnlyOtherDevices();
 
-            var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
-            driverHome.CancelStaleLoadIfPresent();
-            driverHome.ReceiveViaBluetooth();
-            NearbyDevicesPermission.AllowWhenAsked((AndroidDriver)driverApp, timeoutSeconds: 5);
-            string truckCode = driverHome.WaitForTruckCode();
-
-            string? found = FindOwnDriverApp(picker, othersListed, "control");
-            Assert.That(found, Is.EqualTo(truckCode),
-                "The search by difference did not find the Driver app even in receive mode, so the NDT-1 results above can't be trusted.");
+            StartDiscoverableDriverApp();
+            string? found = FindOwnDriverApp(search, "control");
+            Assert.That(found, Is.Not.Null,
+                "The search by difference did not find the started Driver app, so the NDT-1 results above can't be trusted.");
         }
 
-        // Stops every grid Driver app (granting it Nearby access), logs Flex in and opens the 'Send via Bluetooth'
-        // picker on a submitted ticket, then returns what one search lists with no grid Driver app running (other phones
-        // nearby)
-        private (BleTruckPickerPage Picker, IReadOnlyList<string> OthersListed) OpenPickerWithOnlyOtherDevices()
+        // Stops every grid Driver app (granting it Nearby access), logs Flex in on a submitted ticket and runs one Nearby
+        // search with no grid Driver app running; what it lists is other devices (phones nearby)
+        private NearbySearch OpenNearbyWithOnlyOtherDevices()
         {
-            if (DriverFactory.DriverFlex is not AndroidDriver flexAndroid)
+            if (DriverFactory.DriverFlex is not AndroidDriver)
             {
                 Assert.Ignore("Nearby discoverability needs devices (RunMode=Mobile).");
-                return default;
+                return default!;
             }
 
             PrepareGridDriverApps();
+            var (flow, ticketId, _) = StartFlexOnSubmittedTicket("Nearby discoverability");
 
-            var flow = new CollectionLoadTicketFlow(DriverFactory.DriverFlex, _wait.Value!, Node);
-            flow.LoginAndEnterWebView();
-            string ticketId = AnySubmittedTicket(flow, "Nearby discoverability");
+            var menu = OpenNearby(flow, ticketId);
+            Assert.That(menu.IsOpen(), Is.True, $"The Nearby menu did not open for ticket {ticketId}.");
+            // A search that finds nothing ends after 10 s; with other devices listed it keeps going, so cap the wait
+            var snapshot = menu.WaitFor(s => s.Open && s.Searching == null, 15) ?? menu.Snapshot();
+            var others = snapshot.Cards.Select(c => c.Key).ToHashSet();
+            Console.WriteLine($"📡 With no grid Driver app running Flex lists: [{string.Join(", ", others)}].");
+            CloseMenu(menu);
+            return new NearbySearch(flow, ticketId, others);
+        }
 
-            flow.Forms.OpenSubmittedCardBluetooth(ticketId);
-            NearbyDevicesPermission.AllowWhenAsked(flexAndroid, timeoutSeconds: 5);
-            var picker = new BleTruckPickerPage(DriverFactory.DriverFlex);
-            Assert.That(picker.IsOpen(), Is.True, $"The 'Send via Bluetooth' picker did not open for ticket {ticketId}.");
+        // Opens the Nearby menu again (a new discovery attempt) and waits for a card that was not listed before this
+        // node's Driver app ran; Try Again whenever an attempt ends without one. Returns its key, or null
+        private static string? FindOwnDriverApp(NearbySearch search, string check, int timeoutSeconds = 25)
+        {
+            var menu = OpenNearby(search.Flow, search.TicketId);
+            Assert.That(menu.IsOpen(), Is.True, $"{check}: the Nearby menu did not open for ticket {search.TicketId}.");
+            var timer = Stopwatch.StartNew();
+            var found = menu.WaitFor(s =>
+            {
+                if (s.Cards.Any(c => !search.Others.Contains(c.Key))) return true;
+                if (s.Searching == null && (s.NoResults != null || s.HasButton(NearbyDriverMenuPage.TryAgain))) menu.RestartSearch();
+                return false;
+            }, timeoutSeconds);
+            var card = found?.Cards.First(c => !search.Others.Contains(c.Key));
+            Console.WriteLine(card != null
+                ? $"📡 {check}: Flex lists the Driver app as '{card.Key}' ({string.Join(" / ", card.Lines)}) after {timer.Elapsed.TotalSeconds:N1} s."
+                : $"📡 {check}: Flex did not list the Driver app within {timeoutSeconds} s ({menu.Snapshot()}).");
+            CloseMenu(menu);
+            return card?.Key;
+        }
 
-            var othersListed = picker.WaitForSearchToEnd();
-            Console.WriteLine($"📡 With no grid Driver app running Flex lists: [{string.Join(", ", othersListed)}].");
-            return (picker, othersListed);
+        private static void CloseMenu(NearbyDriverMenuPage menu)
+        {
+            menu.StopRecording();
+            menu.ClickButton("Close");
+            Assert.That(menu.WaitFor(s => !s.Open, 10), Is.Not.Null, $"The Nearby menu did not close ({menu.Snapshot()}).");
         }
 
         // Anything on the Driver device waiting for the driver: a window of another app over the Driver app (a Bluetooth
@@ -234,18 +258,6 @@ namespace RecoveryTrac.AutomatedTests
                 }
             }
             return prompts;
-        }
-
-        // Searches again until an entry that was not listed before this node's Driver app ran shows up
-        private static string? FindOwnDriverApp(BleTruckPickerPage picker, IReadOnlyList<string> othersListed, string check)
-        {
-            picker.Rescan();
-            var timer = Stopwatch.StartNew();
-            string? found = picker.FindTruck(code => !othersListed.Contains(code), "this node's Driver app", searches: 2);
-            Console.WriteLine(found != null
-                ? $"📡 {check}: Flex lists the Driver app as '{found}' after {timer.Elapsed.TotalSeconds:N1} s."
-                : $"📡 {check}: Flex did not list the Driver app in 2 searches ({timer.Elapsed.TotalSeconds:N1} s).");
-            return found;
         }
     }
 }

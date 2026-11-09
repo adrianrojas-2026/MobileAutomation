@@ -342,33 +342,53 @@ public class HomePage : BasePage
             return;
         }
 
-        // Select Task
+        // Select Task: FRANK-TEST when the account still has it, otherwise the first task offered. The account's tasks
+        // come from the backend (testuser1 has only 'TIME VERSION 3.0 - TASK B' under DEMO-TESTING on the local data)
+        var before = VisibleTexts();
         var taskField = wf.Until(d => d.FindElement(TaskDropdown));
         taskField.Click();
-        System.Threading.Thread.Sleep(500);
 
-        wf.Until(d => 
+        // A freshly synced account (e.g. after the app's data was wiped) can take a while to fill the list on a busy
+        // emulator. The options are the texts the tap added (the field's own value can repeat one, elsewhere)
+        var taskWait = new OpenQA.Selenium.Support.UI.WebDriverWait(DriverFactory.DriverFlex, TimeSpan.FromSeconds(30));
+        taskWait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        List<(string Text, System.Drawing.Point At, IWebElement Element)> options;
+        try
         {
-            try
+            options = taskWait.Until(_ =>
             {
-                // Find the specific task element in the open list
-                var elements = d.FindElements(By.XPath("//*[contains(@text, 'FRANK-TEST')]"));
-                
-                if (elements.Count > 0 && elements[0].Displayed)
-                {
-                    elements[0].Click(); // Perform the selection
-                    return true;        // Exit the wait loop successfully
-                }
-                return false; // Keep waiting if the element isn't visible yet
-            }
-            catch (Exception)
-            {
-                return false; 
-            }
-        });
+                var added = VisibleTexts().Where(t => !before.Any(b => b.Text == t.Text && b.At == t.At)).ToList();
+                return added.Count > 0 ? added : null;
+            });
+        }
+        catch (WebDriverTimeoutException)
+        {
+            throw new WebDriverTimeoutException(
+                $"The Task list for project DEMO-TESTING offered nothing within 30 s. On screen: [{string.Join(" | ", VisibleTexts().Select(t => t.Text).Distinct())}].");
+        }
+
+        var task = options.FirstOrDefault(o => o.Text.Contains("FRANK-TEST", StringComparison.Ordinal));
+        if (task.Element == null)
+        {
+            task = options.OrderBy(o => o.At.Y).First();
+            Console.WriteLine($"⚠️ Task 'FRANK-TEST' is not offered (offered: [{string.Join(" | ", options.Select(o => o.Text))}]); picking '{task.Text}'.");
+        }
+        task.Element.Click();
+        Console.WriteLine($"📋 Task '{task.Text}' selected.");
 
         System.Threading.Thread.Sleep(500); // Micro stabilization pause
     }
+
+    // Visible native texts with their position, so a picker's options can be told from the form behind it
+    private static List<(string Text, System.Drawing.Point At, IWebElement Element)> VisibleTexts() =>
+        DriverFactory.DriverFlex.FindElements(By.XPath("//android.widget.TextView | //android.widget.CheckedTextView | //android.widget.RadioButton"))
+            .Select(e =>
+            {
+                try { return e.Displayed ? (Text: e.Text?.Trim() ?? string.Empty, At: e.Location, Element: e) : default; }
+                catch (StaleElementReferenceException) { return default; }
+            })
+            .Where(t => !string.IsNullOrEmpty(t.Text))
+            .ToList();
 
     // Web Browser: a fresh browser profile has no cached assignment while the user is clocked out,
     // so Project starts empty and Task / Labor Category stay hidden until a Project is picked.

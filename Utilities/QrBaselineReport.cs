@@ -58,6 +58,12 @@ public static class QrBaselineReport
     public static void AddBaseline(string path) =>
         BaselinesByTest.GetOrAdd(TestContext.CurrentContext.Test.ID, _ => new()).Enqueue(path);
 
+    // Baselines the test recorded (shared with NearbyR1Report)
+    internal static IReadOnlyList<string> BaselinesFor(string testId) =>
+        BaselinesByTest.TryGetValue(testId, out var paths) ? paths.ToList() : [];
+
+    internal static DateTime TestStartedAt => TestStart.Value;
+
     // A finding worth showing in the report's Message column for a test that still passes
     public static void AddNote(string note)
     {
@@ -65,10 +71,14 @@ public static class QrBaselineReport
         NotesByTest.GetOrAdd(TestContext.CurrentContext.Test.ID, _ => new()).Enqueue(note);
     }
 
-    // Call from a [TearDown] after failure evidence was saved
-    public static void RecordTest(string node)
+    // Call from a [TearDown] after failure evidence was saved. Only tests that belong to one of the report's scenarios
+    // (QR-A01, QR-Bxx, TC-xx) are recorded; the #10082 Nearby tests (NDT*) and anything else sharing DualAppTestBase
+    // have their own requirement IDs and would only inflate the totals here
+    // setupFailure: the test's [SetUp] threw (its result isn't set yet, and its [TearDown] won't run)
+    public static void RecordTest(string node, Exception? setupFailure = null)
     {
         var test = TestContext.CurrentContext.Test;
+        if (ScenarioIdsOf(test.MethodName ?? test.Name).Count == 0) return;
         var result = TestContext.CurrentContext.Result;
         string workDirectory = TestContext.CurrentContext.WorkDirectory;
 
@@ -77,13 +87,14 @@ public static class QrBaselineReport
             : [];
         var baselines = BaselinesByTest.TryGetValue(test.ID, out var paths) ? paths.ToList() : [];
         var notes = NotesByTest.TryGetValue(test.ID, out var noted) ? noted.ToList() : [];
-        string message = string.Join("\n", new[] { result.Message ?? string.Empty }.Concat(notes).Where(m => m.Length > 0));
+        string resultMessage = setupFailure != null ? $"Setup failed: {setupFailure.GetType().Name}: {setupFailure.Message}" : result.Message ?? string.Empty;
+        string message = string.Join("\n", new[] { resultMessage }.Concat(notes).Where(m => m.Length > 0));
 
         Results.Enqueue(new BaselineTestResult(
             test.Name,
             ScenarioIdsOf(test.MethodName ?? test.Name),
             node,
-            result.Outcome.Status.ToString(),
+            setupFailure != null ? "Failed" : result.Outcome.Status.ToString(),
             message,
             TestStart.Value == default ? 0 : (DateTime.Now - TestStart.Value).TotalSeconds,
             baselines,
@@ -110,8 +121,7 @@ public static class QrBaselineReport
         var current = Results.ToList();
         if (current.Count == 0) return null;
 
-        string directory = Path.Combine(TestContext.CurrentContext.WorkDirectory, "Reports");
-        Directory.CreateDirectory(directory);
+        string directory = ReportPaths.Directory;
         var results = MergeWithEarlierRuns(current, Path.Combine(directory, "QrBaselineReport_results.json"));
         string path = Path.Combine(directory, $"QrBaselineReport_{DateTime.Now:yyyyMMdd_HHmmss}.html");
         string html = BuildHtml(results, ProbeDevices());
@@ -130,7 +140,9 @@ public static class QrBaselineReport
         {
             if (File.Exists(resultsPath))
             {
-                foreach (var earlier in JsonSerializer.Deserialize<List<BaselineTestResult>>(File.ReadAllText(resultsPath)) ?? [])
+                // Entries without a scenario come from runs before non-baseline tests were left out; drop them
+                foreach (var earlier in (JsonSerializer.Deserialize<List<BaselineTestResult>>(File.ReadAllText(resultsPath)) ?? [])
+                             .Where(r => r.ScenarioIds is { Count: > 0 }))
                 {
                     merged[earlier.TestName] = earlier;
                 }
@@ -147,7 +159,7 @@ public static class QrBaselineReport
         return results;
     }
 
-    private static List<BluetoothReadiness> ProbeDevices()
+    internal static List<BluetoothReadiness> ProbeDevices()
     {
         try
         {
@@ -170,7 +182,69 @@ public static class QrBaselineReport
         return false;
     }
 
-    private static string E(string? text) => WebUtility.HtmlEncode(text ?? string.Empty);
+    internal static string E(string? text) => WebUtility.HtmlEncode(text ?? string.Empty);
+
+    // Styles shared by the generated reports
+    internal const string Css = """
+  body { font-family: "Segoe UI", sans-serif; margin: 32px; color: #1b1b1b; background: #fff; }
+  h1 { margin-bottom: 4px; }
+  h2 { margin-top: 32px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  .meta { color: #555; margin-bottom: 20px; }
+  .summary { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+  .card { padding: 12px 18px; border-radius: 8px; color: #fff; font-weight: 600; min-width: 110px; }
+  .card span { display: block; font-size: 26px; }
+  .total { background: #0078d4; } .pass { background: #107c10; } .fail { background: #d13438; }
+  .warn { background: #b46a00; } .skip { background: #6b6b6b; } .pend { background: #5c2d91; }
+  table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; font-size: 14px; }
+  th { background: #f4f6f8; }
+  .badge { padding: 2px 8px; border-radius: 10px; color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .badge.passed, .badge.met { background: #107c10; } .badge.failed, .badge.notmet { background: #d13438; }
+  .badge.warning, .badge.notchecked { background: #b46a00; } .badge.pending { background: #5c2d91; }
+  .badge.skipped, .badge.inconclusive, .badge.notrun { background: #6b6b6b; }
+  .msg { white-space: pre-wrap; font-family: Consolas, monospace; font-size: 12px; color: #444; max-width: 640px; }
+  pre { background: #f6f8fa; padding: 10px; overflow-x: auto; font-size: 12px; max-height: 420px; }
+  details { margin: 8px 0; } summary { cursor: pointer; font-weight: 600; }
+  img.evidence { max-width: 260px; border: 1px solid #ccc; margin: 4px; }
+  .note { background: #f0f6ff; border-left: 4px solid #0078d4; padding: 10px 14px; }
+  a { color: #0067b8; }
+""";
+
+    // Bluetooth readiness of the devices probed at the end of the run (shared with NearbyR1Report)
+    internal static string DevicesHtml(List<BluetoothReadiness> devices)
+    {
+        var html = new StringBuilder("<h2>Devices (probed at the end of the run)</h2>");
+        if (devices.Count == 0)
+        {
+            html.Append("<p>No device online in adb.</p>");
+            return html.ToString();
+        }
+        html.Append("<table><tr><th>Device</th><th>Android</th><th>BLE hardware</th><th>Bluetooth on</th><th>Airplane mode</th><th>Apps (Bluetooth permissions)</th></tr>");
+        foreach (var d in devices)
+        {
+            string apps = string.Join("<br>", d.Apps.Select(a =>
+                $"{E(a.Key.Split('.').Last())} {E(a.Value.VersionName)}: " +
+                (a.Value.BluetoothPermissions.Count == 0
+                    ? "<i>none requested</i>"
+                    : E(string.Join(", ", a.Value.BluetoothPermissions.Select(p => $"{p.Key.Split('.').Last()}={(p.Value ? "granted" : "not granted")}"))))));
+            html.Append($"<tr><td>{E(d.Udid)} ({E(d.Model)})</td><td>{E(d.AndroidVersion)} (API {d.SdkLevel})</td><td>{(d.HasBleFeature ? "yes" : "<b>no</b>")}</td>" +
+                        $"<td>{(d.BluetoothOn ? "yes" : "no")}</td><td>{(d.AirplaneModeOn ? "<b>on</b>" : "off")}</td><td>{apps}</td></tr>");
+        }
+        html.Append("</table>");
+        return html.ToString();
+    }
+
+    // Failure screenshots embedded, each linking to the file
+    internal static string EvidenceHtml(IEnumerable<string> pngs)
+    {
+        var html = new StringBuilder();
+        foreach (string png in pngs.Where(File.Exists))
+        {
+            html.Append($"<a href=\"file:///{E(png.Replace('\\', '/'))}\"><img class=\"evidence\" alt=\"{E(Path.GetFileName(png))}\" title=\"{E(Path.GetFileName(png))}\" " +
+                        $"src=\"data:image/png;base64,{Convert.ToBase64String(File.ReadAllBytes(png))}\"></a>");
+        }
+        return html.ToString();
+    }
 
     // Failed beats Warning beats Skipped/Inconclusive beats Passed
     private static int Severity(string outcome) => outcome switch
@@ -201,28 +275,7 @@ public static class QrBaselineReport
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>QR Baseline Report</title>
-<style>
-  body { font-family: "Segoe UI", sans-serif; margin: 32px; color: #1b1b1b; background: #fff; }
-  h1 { margin-bottom: 4px; }
-  h2 { margin-top: 32px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
-  .meta { color: #555; margin-bottom: 20px; }
-  .summary { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
-  .card { padding: 12px 18px; border-radius: 8px; color: #fff; font-weight: 600; min-width: 110px; }
-  .card span { display: block; font-size: 26px; }
-  .total { background: #0078d4; } .pass { background: #107c10; } .fail { background: #d13438; }
-  .warn { background: #b46a00; } .skip { background: #6b6b6b; }
-  table { border-collapse: collapse; width: 100%; margin-top: 8px; }
-  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; font-size: 14px; }
-  th { background: #f4f6f8; }
-  .badge { padding: 2px 8px; border-radius: 10px; color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; }
-  .badge.passed { background: #107c10; } .badge.failed { background: #d13438; } .badge.warning { background: #b46a00; }
-  .badge.skipped, .badge.inconclusive { background: #6b6b6b; }
-  .msg { white-space: pre-wrap; font-family: Consolas, monospace; font-size: 12px; color: #444; max-width: 640px; }
-  pre { background: #f6f8fa; padding: 10px; overflow-x: auto; font-size: 12px; max-height: 420px; }
-  details { margin: 8px 0; } summary { cursor: pointer; font-weight: 600; }
-  img.evidence { max-width: 260px; border: 1px solid #ccc; margin: 4px; }
-  .note { background: #f0f6ff; border-left: 4px solid #0078d4; padding: 10px 14px; }
-</style>
+<style>{{Css}}</style>
 </head>
 <body>
 <h1>QR Baseline &amp; BLE Readiness Report</h1>
@@ -274,26 +327,7 @@ public static class QrBaselineReport
             html.Append($"<details><summary>{E(scenarioId)} — {E(Path.GetFileName(baseline))}</summary><pre>{E(json)}</pre></details>");
         }
 
-        html.Append("<h2>Devices (probed at the end of the run)</h2>");
-        if (devices.Count == 0)
-        {
-            html.Append("<p>No device online in adb.</p>");
-        }
-        else
-        {
-            html.Append("<table><tr><th>Device</th><th>Android</th><th>BLE hardware</th><th>Bluetooth on</th><th>Airplane mode</th><th>Apps (Bluetooth permissions)</th></tr>");
-            foreach (var d in devices)
-            {
-                string apps = string.Join("<br>", d.Apps.Select(a =>
-                    $"{E(a.Key.Split('.').Last())} {E(a.Value.VersionName)}: " +
-                    (a.Value.BluetoothPermissions.Count == 0
-                        ? "<i>none requested</i>"
-                        : E(string.Join(", ", a.Value.BluetoothPermissions.Select(p => $"{p.Key.Split('.').Last()}={(p.Value ? "granted" : "not granted")}"))))));
-                html.Append($"<tr><td>{E(d.Udid)} ({E(d.Model)})</td><td>{E(d.AndroidVersion)} (API {d.SdkLevel})</td><td>{(d.HasBleFeature ? "yes" : "<b>no</b>")}</td>" +
-                            $"<td>{(d.BluetoothOn ? "yes" : "no")}</td><td>{(d.AirplaneModeOn ? "<b>on</b>" : "off")}</td><td>{apps}</td></tr>");
-            }
-            html.Append("</table>");
-        }
+        html.Append(DevicesHtml(devices));
 
         var failures = results.Where(r => r.EvidencePaths.Count > 0).ToList();
         if (failures.Count > 0)
@@ -302,11 +336,7 @@ public static class QrBaselineReport
             foreach (var r in failures)
             {
                 html.Append($"<h3>{E(r.TestName)}</h3><div class=\"msg\">{E(Shorten(r.Message, 1200))}</div><div>");
-                foreach (string png in r.EvidencePaths.Where(File.Exists))
-                {
-                    html.Append($"<a href=\"file:///{E(png.Replace('\\', '/'))}\"><img class=\"evidence\" alt=\"{E(Path.GetFileName(png))}\" title=\"{E(Path.GetFileName(png))}\" " +
-                                $"src=\"data:image/png;base64,{Convert.ToBase64String(File.ReadAllBytes(png))}\"></a>");
-                }
+                html.Append(EvidenceHtml(r.EvidencePaths));
                 html.Append("</div>");
             }
         }
@@ -315,7 +345,7 @@ public static class QrBaselineReport
         return html.ToString();
     }
 
-    private static string Shorten(string text, int max) => text.Length <= max ? text : text[..max] + " …";
+    internal static string Shorten(string text, int max) => text.Length <= max ? text : text[..max] + " …";
 
     private static string? TryRead(string json, string property)
     {

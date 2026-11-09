@@ -10,6 +10,10 @@
 #   .\Setup\Run-Suite.ps1 -Target QA -FlexApk <flex.apk> -DriverApk <driver.apk>   # deployed QA services, no Aspire
 #   .\Setup\Run-Suite.ps1 -Headless -Teardown                     # pipelines: no windows, stop what was started
 #   .\Setup\Run-Suite.ps1 -Stop                                   # only stop the grid, Appium and Aspire started by a run
+#   .\Setup\Run-Suite.ps1 -RunMode Web -Filter "Name~NDT5"        # browser tests (Flex Web): Aspire only, no Appium / grid
+#
+# -RunMode sets TestSettings:RunMode for this run only (TestSettings__RunMode), whatever Config/appsettings.json says.
+# Each test ignores itself in the other mode, so one category can be covered by a Mobile run plus a Web run.
 #
 # Target Local starts the Aspire AppHost (Docker must be running) unless its services already answer, and the debug
 # APKs call it through adb reverse. Target QA installs APKs built against the QA services (e.g. the QA pipelines'
@@ -20,6 +24,8 @@
 # ==============================================================================
 param(
     [ValidateSet("Local", "QA")][string]$Target = "Local",
+    # Mobile: emulators through Appium. Web: Flex and the Driver App in desktop browsers (local Aspire only)
+    [ValidateSet("Mobile", "Web")][string]$RunMode = "Mobile",
     [string]$AspirePath = "C:\Users\adrian.rojas\tetratec\Aspire",
     # The UI repo's 'apps' folder; defaults to the Aspire submodule
     [string]$UiPath,
@@ -193,6 +199,12 @@ if ($Target -eq "QA" -and -not ($FlexApk -and $DriverApk)) {
 if ($RebuildApks -and ($FlexApk -or $DriverApk)) {
     throw "Use either -RebuildApks or -FlexApk/-DriverApk, not both."
 }
+if ($RunMode -eq "Web" -and $Target -eq "QA") {
+    throw "RunMode Web opens the local Flex / Driver App web apps (localhost:8100 / 8200), so it needs Target Local."
+}
+$mobile = $RunMode -eq "Mobile"
+# The test project reads environment variables last, so this wins over appsettings.json and user secrets
+$env:TestSettings__RunMode = $RunMode
 
 New-Item -ItemType Directory -Force $ResultsDirectory | Out-Null
 $state = @{}
@@ -245,100 +257,107 @@ try {
     }
 
     # --------------------------------------------------------------------------
-    # 2. Appium
+    # 2. Appium (Mobile only; steps 2-4 and Bluetooth are skipped for a browser run)
     # --------------------------------------------------------------------------
-    Write-Step "Appium"
-    if (Test-Appium) {
-        Write-Host "Appium already answers on $appiumUrl." -ForegroundColor Green
+    if (-not $mobile) {
+        Write-Host "`nRunMode Web: Flex and the Driver App run in desktop browsers; no Appium, emulators or APKs." -ForegroundColor Gray
     }
     else {
-        # npm installs appium.ps1 and appium.cmd; Start-Process can only run the .cmd
-        $appium = (Get-Command appium.cmd -ErrorAction Stop).Source
-        # Appium 3 only accepts insecure features scoped to a driver
-        $major = [int](((& $appium --version) | Select-Object -Last 1).Trim().Split('.')[0])
-        $insecure = if ($major -ge 3) { "uiautomator2:chromedriver_autodownload" } else { "chromedriver_autodownload" }
-        $appiumLog = Join-Path $ResultsDirectory "appium.log"
-        Write-Host "Starting Appium $major.x (log: $appiumLog)..."
-        $appiumProcess = Start-Process $appium -ArgumentList "--address 127.0.0.1 --port 4723 --allow-insecure $insecure" -PassThru -WindowStyle Hidden `
-            -RedirectStandardOutput $appiumLog -RedirectStandardError (Join-Path $ResultsDirectory "appium.err.log")
-        $state.AppiumPid = $appiumProcess.Id
-        Save-State $state
-
-        $deadline = (Get-Date).AddSeconds(60)
-        while (-not (Test-Appium)) {
-            if ($appiumProcess.HasExited -or (Get-Date) -gt $deadline) { throw "Appium did not start on $appiumUrl; see $appiumLog." }
-            Start-Sleep -Seconds 2
+        Write-Step "Appium"
+        if (Test-Appium) {
+            Write-Host "Appium already answers on $appiumUrl." -ForegroundColor Green
         }
-        Write-Host "Appium is up." -ForegroundColor Green
-    }
+        else {
+            # npm installs appium.ps1 and appium.cmd; Start-Process can only run the .cmd
+            $appium = (Get-Command appium.cmd -ErrorAction Stop).Source
+            # Appium 3 only accepts insecure features scoped to a driver
+            $major = [int](((& $appium --version) | Select-Object -Last 1).Trim().Split('.')[0])
+            $insecure = if ($major -ge 3) { "uiautomator2:chromedriver_autodownload" } else { "chromedriver_autodownload" }
+            $appiumLog = Join-Path $ResultsDirectory "appium.log"
+            Write-Host "Starting Appium $major.x (log: $appiumLog)..."
+            $appiumProcess = Start-Process $appium -ArgumentList "--address 127.0.0.1 --port 4723 --allow-insecure $insecure" -PassThru -WindowStyle Hidden `
+                -RedirectStandardOutput $appiumLog -RedirectStandardError (Join-Path $ResultsDirectory "appium.err.log")
+            $state.AppiumPid = $appiumProcess.Id
+            Save-State $state
 
-    # --------------------------------------------------------------------------
-    # 3. Emulator grid
-    # --------------------------------------------------------------------------
-    Write-Step "Emulator grid (nodes $($Nodes -join ', '))"
-    # Step 4 installs both apps in these cases, so an emulator still missing one is fine here
-    $appsInstalledLater = $RebuildApks -or ($FlexApk -and $DriverApk)
-    & (Join-Path $PSScriptRoot "Start-MobileGrid.ps1") -Nodes $Nodes -Headless:$Headless -AppsInstalledLater:$appsInstalledLater
-    if ($LASTEXITCODE -ne 0) { throw "The emulator grid did not start." }
-
-    # --------------------------------------------------------------------------
-    # 4. Apps
-    # --------------------------------------------------------------------------
-    $flexUdids = @($Nodes | ForEach-Object { Get-NodeUdid $_ "Flex" })
-    $driverUdids = @($Nodes | ForEach-Object { Get-NodeUdid $_ "Driver" })
-
-    if ($RebuildApks) {
-        Write-Step "Debug APKs from $UiPath"
-        $uiRoot = Split-Path $UiPath -Parent
-        if (-not (Test-Path (Join-Path $uiRoot "node_modules"))) {
-            Write-Host "Installing the UI repo's packages (fresh checkout)..."
-            Push-Location $uiRoot
-            try { pnpm install --frozen-lockfile; if ($LASTEXITCODE -ne 0) { throw "pnpm install failed." } }
-            finally { Pop-Location }
+            $deadline = (Get-Date).AddSeconds(60)
+            while (-not (Test-Appium)) {
+                if ($appiumProcess.HasExited -or (Get-Date) -gt $deadline) { throw "Appium did not start on $appiumUrl; see $appiumLog." }
+                Start-Sleep -Seconds 2
+            }
+            Write-Host "Appium is up." -ForegroundColor Green
         }
-        # Each app is built only when its sources changed since its last build, unless -ForceRebuild
-        $buildArgs = @{ UiPath = $UiPath; Force = [bool]$ForceRebuild }
-        if ($JavaHome) { $buildArgs.JavaHome = $JavaHome }
-        # Builds and installs on the first node; the others get the same APK below
-        & (Join-Path $PSScriptRoot "Build-DebugApk.ps1") -App Flex -Udid $flexUdids[0] @buildArgs
-        & (Join-Path $PSScriptRoot "Build-DebugApk.ps1") -App Driver -Udid $driverUdids[0] @buildArgs
-        $FlexApk = Join-Path $UiPath "Flex\android\app\build\outputs\apk\debug\app-debug.apk"
-        $DriverApk = Join-Path $UiPath "Driver-App\android\app\build\outputs\apk\debug\app-debug.apk"
-        $flexUdids = @($flexUdids | Select-Object -Skip 1)
-        $driverUdids = @($driverUdids | Select-Object -Skip 1)
-    }
 
-    if ($FlexApk -and $DriverApk) {
-        Write-Step "Installing the apps"
-        $installs = @($flexUdids | ForEach-Object { @{ Udid = $_; Apk = $FlexApk; Package = "com.tetratech.recoverytracflex" } }) +
-                    @($driverUdids | ForEach-Object { @{ Udid = $_; Apk = $DriverApk; Package = "com.tetratech.recoverytracdriver" } })
-        foreach ($install in $installs) {
-            if (-not (Test-Path $install.Apk)) { throw "APK not found: $($install.Apk)" }
-            # A build with another signature (debug vs. QA/release) can't be installed over the old one, so uninstall
-            # first, except for a rebuilt debug APK, which keeps the app data like Build-DebugApk does
-            if (-not $RebuildApks) { & $adbPath -s $install.Udid uninstall $install.Package *> $null }
-            Write-Host "$($install.Udid): installing $($install.Apk)..."
-            & $adbPath -s $install.Udid install -r $install.Apk
-            if ($LASTEXITCODE -ne 0) { throw "Install failed on $($install.Udid)." }
+        # --------------------------------------------------------------------------
+        # 3. Emulator grid
+        # --------------------------------------------------------------------------
+        Write-Step "Emulator grid (nodes $($Nodes -join ', '))"
+        # Step 4 installs both apps in these cases, so an emulator still missing one is fine here
+        $appsInstalledLater = $RebuildApks -or ($FlexApk -and $DriverApk)
+        & (Join-Path $PSScriptRoot "Start-MobileGrid.ps1") -Nodes $Nodes -Headless:$Headless -AppsInstalledLater:$appsInstalledLater
+        if ($LASTEXITCODE -ne 0) { throw "The emulator grid did not start." }
+
+        # --------------------------------------------------------------------------
+        # 4. Apps
+        # --------------------------------------------------------------------------
+        $flexUdids = @($Nodes | ForEach-Object { Get-NodeUdid $_ "Flex" })
+        $driverUdids = @($Nodes | ForEach-Object { Get-NodeUdid $_ "Driver" })
+
+        if ($RebuildApks) {
+            Write-Step "Debug APKs from $UiPath"
+            $uiRoot = Split-Path $UiPath -Parent
+            if (-not (Test-Path (Join-Path $uiRoot "node_modules"))) {
+                Write-Host "Installing the UI repo's packages (fresh checkout)..."
+                Push-Location $uiRoot
+                try { pnpm install --frozen-lockfile; if ($LASTEXITCODE -ne 0) { throw "pnpm install failed." } }
+                finally { Pop-Location }
+            }
+            # Each app is built only when its sources changed since its last build, unless -ForceRebuild
+            $buildArgs = @{ UiPath = $UiPath; Force = [bool]$ForceRebuild }
+            if ($JavaHome) { $buildArgs.JavaHome = $JavaHome }
+            # Builds and installs on the first node; the others get the same APK below
+            & (Join-Path $PSScriptRoot "Build-DebugApk.ps1") -App Flex -Udid $flexUdids[0] @buildArgs
+            & (Join-Path $PSScriptRoot "Build-DebugApk.ps1") -App Driver -Udid $driverUdids[0] @buildArgs
+            $FlexApk = Join-Path $UiPath "Flex\android\app\build\outputs\apk\debug\app-debug.apk"
+            $DriverApk = Join-Path $UiPath "Driver-App\android\app\build\outputs\apk\debug\app-debug.apk"
+            $flexUdids = @($flexUdids | Select-Object -Skip 1)
+            $driverUdids = @($driverUdids | Select-Object -Skip 1)
         }
-    }
-    else {
-        Write-Host "`nUsing the apps already installed on the emulators (pass -RebuildApks or -FlexApk/-DriverApk to replace them)." -ForegroundColor Gray
-    }
 
-    Write-Step "Bluetooth"
-    Repair-Bluetooth (@($Nodes | ForEach-Object { Get-NodeUdid $_ "Flex"; Get-NodeUdid $_ "Driver" }))
+        if ($FlexApk -and $DriverApk) {
+            Write-Step "Installing the apps"
+            $installs = @($flexUdids | ForEach-Object { @{ Udid = $_; Apk = $FlexApk; Package = "com.tetratech.recoverytracflex" } }) +
+                        @($driverUdids | ForEach-Object { @{ Udid = $_; Apk = $DriverApk; Package = "com.tetratech.recoverytracdriver" } })
+            foreach ($install in $installs) {
+                if (-not (Test-Path $install.Apk)) { throw "APK not found: $($install.Apk)" }
+                # A build with another signature (debug vs. QA/release) can't be installed over the old one, so uninstall
+                # first, except for a rebuilt debug APK, which keeps the app data like Build-DebugApk does
+                if (-not $RebuildApks) { & $adbPath -s $install.Udid uninstall $install.Package *> $null }
+                Write-Host "$($install.Udid): installing $($install.Apk)..."
+                & $adbPath -s $install.Udid install -r $install.Apk
+                if ($LASTEXITCODE -ne 0) { throw "Install failed on $($install.Udid)." }
+            }
+        }
+        else {
+            Write-Host "`nUsing the apps already installed on the emulators (pass -RebuildApks or -FlexApk/-DriverApk to replace them)." -ForegroundColor Gray
+        }
+
+        Write-Step "Bluetooth"
+        Repair-Bluetooth (@($Nodes | ForEach-Object { Get-NodeUdid $_ "Flex"; Get-NodeUdid $_ "Driver" }))
+    }
 
     # --------------------------------------------------------------------------
     # 5. Tests
     # --------------------------------------------------------------------------
-    Write-Step "Tests ($Filter)"
+    Write-Step "Tests ($Filter, RunMode $RunMode)"
+    # Separate TRX per mode, so a Web run after a Mobile one in the same folder doesn't overwrite its results
+    $trx = if ($mobile) { "mobile-tests.trx" } else { "web-tests.trx" }
     & dotnet test (Join-Path $repoRoot "MobileAutomation.Tests.csproj") `
         --configuration $Configuration `
         --filter $Filter `
         --settings (Join-Path $PSScriptRoot "mobile.runsettings") `
         --results-directory $ResultsDirectory `
-        --logger "trx;LogFileName=mobile-tests.trx" `
+        --logger "trx;LogFileName=$trx" `
         --logger "console;verbosity=normal"
     $testExitCode = $LASTEXITCODE
 }
@@ -347,20 +366,30 @@ catch {
     $testExitCode = 1
 }
 finally {
-    # The tests write the HTML report, baselines and failure screenshots next to the test binaries; copy this run's
-    # into the results folder so a pipeline publishes one place
+    # The reports are written to TestResults\Reports (every build); baselines and failure screenshots next to the test
+    # binaries. Copy this run's into the results folder so a pipeline publishes one place
+    $reports = Join-Path $repoRoot "TestResults\Reports"
+    $copyReports = [IO.Path]::GetFullPath($reports) -ne [IO.Path]::GetFullPath((Join-Path $ResultsDirectory "Reports"))
+    if ($copyReports -and (Test-Path $reports)) {
+        # This run's files, plus the index and the latest of each report it links to (some may come from earlier runs)
+        $linked = @("index.html", "*_latest.html")
+        $files = @(Get-ChildItem $reports -File | Where-Object { $name = $_.Name; $_.LastWriteTime -ge $started -or @($linked | Where-Object { $name -like $_ }).Count -gt 0 })
+        if ($files.Count -gt 0) {
+            New-Item -ItemType Directory -Force (Join-Path $ResultsDirectory "Reports") | Out-Null
+            $files | Copy-Item -Destination (Join-Path $ResultsDirectory "Reports") -Force
+        }
+    }
     $output = Join-Path $repoRoot "bin\$Configuration\net10.0"
     if (Test-Path $output) {
-        foreach ($folder in "Reports", "Baselines") {
-            $files = @(Get-ChildItem (Join-Path $output $folder) -File -Recurse -ErrorAction SilentlyContinue | Where-Object LastWriteTime -ge $started)
-            if ($files.Count -gt 0) {
-                New-Item -ItemType Directory -Force (Join-Path $ResultsDirectory $folder) | Out-Null
-                $files | Copy-Item -Destination (Join-Path $ResultsDirectory $folder) -Force
-            }
+        $files = @(Get-ChildItem (Join-Path $output "Baselines") -File -Recurse -ErrorAction SilentlyContinue | Where-Object LastWriteTime -ge $started)
+        if ($files.Count -gt 0) {
+            New-Item -ItemType Directory -Force (Join-Path $ResultsDirectory "Baselines") | Out-Null
+            $files | Copy-Item -Destination (Join-Path $ResultsDirectory "Baselines") -Force
         }
         Get-ChildItem $output -Filter "Failure_*.png" -File | Where-Object LastWriteTime -ge $started |
             Copy-Item -Destination $ResultsDirectory -Force
     }
+    Write-Host "Reports: $(Join-Path $reports 'index.html')" -ForegroundColor Cyan
     Write-Host "`nResults: $ResultsDirectory" -ForegroundColor Cyan
 
     if ($Teardown) {

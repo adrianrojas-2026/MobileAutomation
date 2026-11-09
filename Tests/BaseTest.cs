@@ -1,5 +1,4 @@
 ﻿using MobileAutomation.Tests.Drivers;
-using MobileAutomation.Tests.Reporting;
 using OpenQA.Selenium.Appium.Android;
 
 namespace MobileAutomation.Tests.Tests;
@@ -47,19 +46,5 @@ public class BaseTest
 
         // 🟢 3. Clear the ThreadLocal handles out of the memory engine and recycle leased grid nodes
         DriverFactory.Quit();
-    }
-
-    [OneTimeSetUp]
-    public void StartSuite()
-    {
-        HtmlReportGenerator.SuiteStartTime = DateTime.Now;
-    }
-
-    [OneTimeTearDown]
-    public void GenerateReport()
-    {
-        HtmlReportGenerator.SuiteEndTime = DateTime.Now;
-        Console.WriteLine("Generating HTML Report...");
-        HtmlReportGenerator.Generate();
     }
 }

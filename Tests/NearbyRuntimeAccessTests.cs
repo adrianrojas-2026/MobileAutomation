@@ -1,3 +1,4 @@
+using MobileAutomation.Tests.Reporting;
 using MobileAutomation.Tests.Drivers;
 using MobileAutomation.Tests.Pages;
 using MobileAutomation.Tests.Tests;
@@ -27,6 +28,7 @@ namespace RecoveryTrac.AutomatedTests
 
         // 10082-NDT-6-P01, P02, P03, P08, N01, P09: Bluetooth off when the Flex user taps the Nearby action, then turned on
         [Test]
+        [Requirements("NDT-6-P01", "NDT-6-P02", "NDT-6-P03", "NDT-6-P08", "NDT-6-N01", "NDT-6-P09")]
         public void NDT6_BluetoothOff_ShowsAccessFlow_ThenSearchesOnceOn()
         {
             var (flow, ticketId, flexUdid) = StartFlexOnSubmittedTicket("Nearby runtime access");
@@ -61,7 +63,7 @@ namespace RecoveryTrac.AutomatedTests
                     Assert.That(access, Is.Not.Null,
                         $"10082-NDT-6-P02 / P03 not met: with Bluetooth off Flex did not show the Bluetooth Access flow with '{BluetoothAccessText}' ({shown}).");
                     Assert.That(whileOff.Log.Any(s => s.Searching != null), Is.False,
-                        $"10082-NDT-6-P01 / N01 not met: Flex started searching with Bluetooth off ({whileOff.Log.First(s => s.Searching != null)}).");
+                        $"10082-NDT-6-P01 / N01 not met: Flex started searching with Bluetooth off ({whileOff.Log.FirstOrDefault(s => s.Searching != null)}).");
                     if (access != null)
                     {
                         Assert.That(access.HasButton(Cancel), Is.True,
@@ -83,6 +85,7 @@ namespace RecoveryTrac.AutomatedTests
 
         // 10082-NDT-6-E02 (and N01): Bluetooth off, the Flex user cancels the access flow
         [Test]
+        [Requirements("NDT-6-E02", "NDT-6-N01")]
         public void NDT6_BluetoothOff_CancelAccessFlow_ReturnsWithoutSearching()
         {
             var (flow, ticketId, flexUdid) = StartFlexOnSubmittedTicket("Nearby runtime access");
@@ -139,6 +142,7 @@ namespace RecoveryTrac.AutomatedTests
 
         // 10082-NDT-6-P02, E03, N01: Flex without Nearby devices access, and the user refuses it when Android asks
         [Test]
+        [Requirements("NDT-6-P02", "NDT-6-E03", "NDT-6-N01")]
         public void NDT6_NearbyAccessDenied_DoesNotSearch()
         {
             var (flow, ticketId, flexUdid) = StartFlexOnSubmittedTicket("Nearby runtime access", grantNearby: false);
@@ -171,7 +175,7 @@ namespace RecoveryTrac.AutomatedTests
                     Assert.That(accessShown, Is.True,
                         "10082-NDT-6-P02 not met: without Nearby devices access Flex did not show the shared Bluetooth Access flow before discovery.");
                     Assert.That(recording.Log.Any(s => s.Searching != null), Is.False,
-                        $"10082-NDT-6-N01 / E03 not met: Flex started searching without Nearby devices access ({recording.Log.First(s => s.Searching != null)}).");
+                        $"10082-NDT-6-N01 / E03 not met: Flex started searching without Nearby devices access ({recording.Log.FirstOrDefault(s => s.Searching != null)}).");
                     Assert.That(scanning, Is.Not.True, "10082-NDT-6-E03 not met: Flex is scanning after Nearby devices access was refused.");
                 });
             }

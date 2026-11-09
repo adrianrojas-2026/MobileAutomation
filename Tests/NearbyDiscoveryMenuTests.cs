@@ -1,3 +1,4 @@
+using MobileAutomation.Tests.Reporting;
 using MobileAutomation.Tests.Pages;
 using MobileAutomation.Tests.Tests;
 using MobileAutomation.Tests.Utilities;
@@ -17,9 +18,14 @@ namespace RecoveryTrac.AutomatedTests
     [NonParallelizable]
     public class NearbyDiscoveryMenuTests : NearbyTestBase
     {
+        // The required searching message with the spinner beside it
+        private static bool ShowsSearchingWithSpinner(MenuSnapshot s) =>
+            s.Searching is { Spinner: true } searching && searching.Text == SearchingText;
+
         // 10082-NDT-2-P01, P02, E01, E02, E03, E05, P16, N04: no Driver App nearby. Searching at once, the no-results
         // state after 10 s, Try Again for a new 10-s attempt, then dismissing the menu mid-search
         [Test]
+        [Requirements("NDT-2-P01", "NDT-2-P02", "NDT-2-E01", "NDT-2-E02", "NDT-2-E03", "NDT-2-E05", "NDT-2-P16", "NDT-2-N04")]
         public void NDT2_NoDriverApp_NoResultsAfter10s_TryAgain_DismissStopsDiscovery()
         {
             var (flow, ticketId, flexUdid) = StartFlexOnSubmittedTicket("Nearby discovery menu");
@@ -46,6 +52,7 @@ namespace RecoveryTrac.AutomatedTests
             // Try Again: a new attempt with its own 10-s interval
             bool tryAgainOffered = firstEnd?.HasButton(TryAgain) == true;
             MenuSnapshot? retrySearching = null;
+            bool retryShowedSearching = false;
             double? retrySearchedFor = null;
             if (tryAgainOffered)
             {
@@ -56,6 +63,8 @@ namespace RecoveryTrac.AutomatedTests
                 var retry = menu.Recording();
                 long tClick = retry.MarkTime($"click {TryAgain}")!.Value;
                 retrySearching = retry.Log.FirstOrDefault(s => s.T >= tClick && s.Searching != null);
+                // The message can render a frame before the spinner component draws, so any frame of the new attempt counts
+                retryShowedSearching = retry.Log.Any(s => s.T >= tClick && s.NoResults == null && ShowsSearchingWithSpinner(s));
                 var retryStopped = retrySearching == null ? null : retry.Log.FirstOrDefault(s => s.T > retrySearching.T && s.Open && s.Searching == null);
                 retrySearchedFor = retryStopped == null ? null : Seconds(retrySearching!.T, retryStopped.T);
                 Console.WriteLine($"📡 Try Again: searching '{retrySearching?.Searching?.Text}', stopped after {retrySearchedFor} s.");
@@ -112,7 +121,7 @@ namespace RecoveryTrac.AutomatedTests
                     $"10082-NDT-2-P01 not met: Flex did not start searching within 3 s of the Nearby action, without a separate Search action (first state: {first.Log.FirstOrDefault(s => s.Open)}).");
                 Assert.That(firstSearching?.Searching?.Text, Is.EqualTo(SearchingText),
                     "10082-NDT-2-P02 not met: the active-search message is not the required one.");
-                Assert.That(firstSearching?.Searching?.Spinner, Is.True,
+                Assert.That(first.Log.Any(ShowsSearchingWithSpinner), Is.True,
                     "10082-NDT-2-P02 not met: no indeterminate spinner beside the searching message.");
                 Assert.That(firstEnd is { Searching: null, Spinner: false }, Is.True,
                     $"10082-NDT-2-P02 not met: the searching message or spinner is still shown once discovery stopped ({firstEnd}).");
@@ -128,7 +137,7 @@ namespace RecoveryTrac.AutomatedTests
                     $"10082-NDT-2-E03 not met: the no-results state offers no '{TryAgain}' action ({firstEnd}).");
                 if (tryAgainOffered)
                 {
-                    Assert.That(retrySearching is { NoResults: null, Searching.Spinner: true } && retrySearching.Searching.Text == SearchingText, Is.True,
+                    Assert.That(retryShowedSearching, Is.True,
                         $"10082-NDT-2-E05 not met: after Try Again Flex did not clear the no-results state and show '{SearchingText}' with a spinner ({retrySearching}).");
                     Assert.That(retrySearchedFor, Is.Not.Null.And.InRange(9.5, 12.0),
                         $"10082-NDT-2-E05 not met: the attempt started by Try Again searched for {retrySearchedFor?.ToString() ?? "no measurable time"} s instead of a new 10-s interval.");
@@ -151,6 +160,7 @@ namespace RecoveryTrac.AutomatedTests
         // Its card shows under the still-running search, stays past the 10-s mark while Flex keeps searching, and goes
         // away by itself once the Driver App closes
         [Test]
+        [Requirements("NDT-2-P03", "NDT-2-E06", "NDT-2-P04", "NDT-2-N02", "NDT-2-N01", "NDT-3-P01", "NDT-3-P03", "NDT-3-P21", "NDT-3-P12")]
         public void NDT2_NDT3_DriverAppFound_ListedWhileDiscoveryContinues()
         {
             var (flow, ticketId, flexUdid) = StartFlexOnSubmittedTicket("Nearby discovery menu");
@@ -163,8 +173,14 @@ namespace RecoveryTrac.AutomatedTests
             const double watchSeconds = 16;
             Thread.Sleep(TimeSpan.FromSeconds(Math.Max(0, watchSeconds - own.SinceAttempt.Elapsed.TotalSeconds)));
             bool? scanningAfterWatch = IsFlexScanning(flexUdid);
-            var watched = menu.Recording().Log.Where(s => s.T >= own.WhenFound.T).ToList();
+            // The recorder logs a state only when it changes, and a steady card (same distance) changes nothing after it
+            // appears: watch from the state on screen when the card was found, through every change, to now
+            var recording = menu.Recording();
             var atEnd = menu.Snapshot();
+            var watched = recording.Log.Where(s => s.T > own.WhenFound.T)
+                .Prepend(recording.At(own.WhenFound.T) ?? own.WhenFound)
+                .Append(atEnd)
+                .ToList();
             var card = atEnd.Card(own.Key) ?? foundCard;
             int[] ownCardCounts = watched.Select(s => s.Cards.Count(c => c.Key == own.Key)).Distinct().ToArray();
             Console.WriteLine($"📡 After {own.SinceAttempt.Elapsed.TotalSeconds:N1} s: {atEnd}; Flex scanning: {scanningAfterWatch}.");

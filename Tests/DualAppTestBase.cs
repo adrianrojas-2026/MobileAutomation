@@ -22,7 +22,18 @@ public abstract class DualAppTestBase : BaseTest
     public void SetupDualApps()
     {
         QrBaselineReport.StartTest();
-        DriverFactory.InitializeDualApps(NodeForCurrentTest, AccountForCurrentTest);
+        try
+        {
+            DriverFactory.InitializeDualApps(NodeForCurrentTest, AccountForCurrentTest);
+        }
+        catch (Exception ex)
+        {
+            // NUnit skips this class's [TearDown] when [SetUp] fails, so CaptureFailureEvidence never records the test;
+            // record it here, or a run whose sessions can't start (Appium down, emulator gone) leaves no report at all
+            QrBaselineReport.RecordTest(NodeForCurrentTest, setupFailure: ex);
+            NearbyR1Report.RecordTest(NodeForCurrentTest, setupFailure: ex);
+            throw;
+        }
         int timeoutSeconds = int.Parse(TestConfiguration.Configuration["TestSettings:ExplicitWaitTimeoutSeconds"] ?? "15");
         _wait.Value = new WebDriverWait(DriverFactory.DriverFlex, TimeSpan.FromSeconds(timeoutSeconds));
 
@@ -48,8 +59,10 @@ public abstract class DualAppTestBase : BaseTest
             if (DriverFactory.DriverDriver != null) SaveEvidence(DriverFactory.DriverDriver, "DriverApp", timestamp);
         }
 
-        // After the evidence, so the final report can show it
+        // After the evidence, so the final reports can show it. Each report keeps only its own tests: the QR baseline
+        // scenarios / TC-xx, and the #10082 Nearby tests marked with [Requirements]
         QrBaselineReport.RecordTest(NodeForCurrentTest);
+        NearbyR1Report.RecordTest(NodeForCurrentTest);
     }
 
     private static void SaveEvidence(OpenQA.Selenium.IWebDriver driver, string app, string timestamp)

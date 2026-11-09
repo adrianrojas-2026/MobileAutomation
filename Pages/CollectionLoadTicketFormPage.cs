@@ -272,40 +272,73 @@ public class CollectionLoadTicketFormPage : BasePage
         bool galleryAllowed = FindVisible(SelectFromGalleryButton, 5) != null;
 
         string webContext = androidDriver.Context;
-        if (galleryAllowed)
+        if (!galleryAllowed)
         {
-            string udid = AdbHelper.GetUdid(androidDriver)
-                ?? throw new InvalidOperationException("Could not tell which device the Appium session is on.");
-            string devicePath = AdbHelper.PushToGallery(udid, imagePath);
-            ScrollAndClick(SelectFromGalleryButton, jsClickWhenIntercepted: true);
-            Console.WriteLine($"📷 '{fieldLabel}' allows gallery uploads. Picking '{devicePath}'...");
-        }
-        else
-        {
-            Console.WriteLine($"📷 '{fieldLabel}' requires a live photo. Taking one with the emulator camera...");
+            TakeLivePhoto(androidDriver, fieldLabel, webContext);
+            return;
         }
 
-        // Picker and camera are native activities on top of the app's WebView
+        string udid = AdbHelper.GetUdid(androidDriver)
+            ?? throw new InvalidOperationException("Could not tell which device the Appium session is on.");
+        string devicePath = AdbHelper.PushToGallery(udid, imagePath);
+        ScrollAndClick(SelectFromGalleryButton, jsClickWhenIntercepted: true);
+        Console.WriteLine($"📷 '{fieldLabel}' allows gallery uploads. Picking '{devicePath}'...");
+
+        // The picker is a native activity on top of the app's WebView
         androidDriver.Context = "NATIVE_APP";
         try
         {
-            if (galleryAllowed)
-            {
-                var photo = FindVisible(PickerFirstPhoto, 30)
-                    ?? throw new NoSuchElementException("The Android photo picker did not show any photo to select.");
-                photo.Click();
-            }
-            else
-            {
-                TakeCameraPhoto(androidDriver);
-            }
+            var photo = FindVisible(PickerFirstPhoto, 30)
+                ?? throw new NoSuchElementException("The Android photo picker did not show any photo to select.");
+            photo.Click();
         }
         finally
         {
-            // The app's WebView comes back once the picker/camera returns its result
-            new WebDriverWait(androidDriver, TimeSpan.FromSeconds(30)).Until(_ => androidDriver.Contexts.Contains(webContext));
-            androidDriver.Context = webContext;
+            ReturnToWebView(androidDriver, webContext);
         }
+    }
+
+    // The emulator's camera app (all grid AVDs)
+    private const string CameraPackage = "com.android.camera2";
+
+    // The camera opened by the field's ADD. The emulator camera now and then hangs (black screen, its UI thread too
+    // busy for Appium to read the screen) or never takes the photo; then it is closed, which hands Flex a canceled
+    // photo, and ADD is tapped again for a fresh camera
+    private void TakeLivePhoto(AndroidDriver androidDriver, string fieldLabel, string webContext)
+    {
+        const int attempts = 2;
+        for (int attempt = 1; ; attempt++)
+        {
+            Console.WriteLine($"📷 '{fieldLabel}' requires a live photo. Taking one with the emulator camera...");
+            androidDriver.Context = "NATIVE_APP";
+            try
+            {
+                TakeCameraPhoto(androidDriver);
+                ReturnToWebView(androidDriver, webContext);
+                return;
+            }
+            catch (WebDriverException ex)
+            {
+                string reason = ex.Message.Split('\n')[0];
+                string? udid = AdbHelper.GetUdid(androidDriver);
+                if (udid != null) AdbHelper.Run(udid, $"shell am force-stop {CameraPackage}");
+                if (attempt >= attempts)
+                {
+                    throw new WebDriverException($"The emulator camera failed {attempts} times for '{fieldLabel}'. Last error: {reason}", ex);
+                }
+                Console.WriteLine($"📷 The camera failed ({reason}); closed it, opening it again...");
+            }
+
+            ReturnToWebView(androidDriver, webContext);
+            ScrollAndClick(PhotoAddButton(fieldLabel), jsClickWhenIntercepted: true);
+        }
+    }
+
+    // The app's WebView comes back once the picker/camera returns its result (or is closed)
+    private static void ReturnToWebView(AndroidDriver androidDriver, string webContext)
+    {
+        new WebDriverWait(androidDriver, TimeSpan.FromSeconds(30)).Until(_ => androidDriver.Contexts.Contains(webContext));
+        androidDriver.Context = webContext;
     }
 
     private static void TakeCameraPhoto(AndroidDriver androidDriver)
@@ -320,11 +353,33 @@ public class CollectionLoadTicketFormPage : BasePage
             return d.FindElements(CameraShutterButton).FirstOrDefault(b => b.Displayed && b.Enabled);
         });
         Thread.Sleep(1000); // Let the preview start; an early tap can be ignored
-        shutter.Click();
 
-        var confirmWait = new WebDriverWait(androidDriver, TimeSpan.FromSeconds(30));
-        confirmWait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
-        confirmWait.Until(d => d.FindElements(CameraConfirmButton).FirstOrDefault(b => b.Displayed))!.Click();
+        // A busy emulator's camera ignores a shutter tap now and then and stays in capture mode, so tap again while
+        // the shutter is still there and no review screen (confirm button) came up
+        const int attempts = 3;
+        for (int attempt = 1; ; attempt++)
+        {
+            androidDriver.FindElements(CameraShutterButton).FirstOrDefault(b => b.Displayed && b.Enabled)?.Click();
+
+            var confirmWait = new WebDriverWait(androidDriver, TimeSpan.FromSeconds(attempt < attempts ? 10 : 30));
+            confirmWait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+            try
+            {
+                confirmWait.Until(d => d.FindElements(CameraConfirmButton).FirstOrDefault(b => b.Displayed))!.Click();
+                break;
+            }
+            catch (WebDriverTimeoutException) when (attempt < attempts)
+            {
+                Console.WriteLine($"📷 The camera did not take the photo after shutter tap {attempt}; tapping it again...");
+            }
+            catch (WebDriverTimeoutException ex)
+            {
+                bool stillCapturing = androidDriver.FindElements(CameraShutterButton).Any(b => b.Displayed);
+                throw new WebDriverTimeoutException(
+                    $"The emulator camera did not take a photo after {attempts} shutter taps " +
+                    $"({(stillCapturing ? "still in capture mode" : "no review screen with a confirm button")}).", ex);
+            }
+        }
         Console.WriteLine("📷 Photo taken with the emulator camera.");
     }
 
