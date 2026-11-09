@@ -9,5 +9,8 @@ public class ReportSetUpFixture
     public void WriteFinalReports()
     {
         QrBaselineReport.Generate();
+        NearbyR1Report.Generate();
+        // Last, so it shows when each report was written
+        ReportIndex.Generate();
     }
 }

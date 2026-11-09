@@ -1,3 +1,4 @@
+using MobileAutomation.Tests.Reporting;
 using MobileAutomation.Tests.Drivers;
 using MobileAutomation.Tests.Flows;
 using MobileAutomation.Tests.Tests;
@@ -16,6 +17,7 @@ namespace RecoveryTrac.AutomatedTests
     {
         // 10082-NDT-5-P05, P06, N01: a submitted ticket on Flex Web offers its QR action and no Nearby action
         [Test]
+        [Requirements("NDT-5-P05", "NDT-5-P06", "NDT-5-N01")]
         public void NDT5_FlexWithoutNearby_KeepsQrAction_ShowsNoNearbyAction()
         {
             if (DriverFactory.DriverFlex is AndroidDriver)

@@ -213,7 +213,7 @@ From *BT - Requirements Plan - feature-10082*, priority group **R1-C1**. Automat
 
 The fixture is `NonParallelizable` and runs on Node 2 (`testuser2`).
 
-**When R1 lands:** the picker becomes the standard Flex Action Menu (FEAT-NDT-2), so `BleTruckPickerPage`'s locators will need updating. The test logic stays the same.
+**R1:** the POC picker was replaced by the Nearby menu (FEAT-NDT-2) with Driver App identity cards, and the Driver App no longer has *Receive via Bluetooth*. The test reads the menu with `NearbyDriverMenuPage` and finds its own Driver App by difference (see the README's TC-12 / TC-13 section).
 
 ---
 

@@ -26,6 +26,12 @@ parameters:
     displayName: Tests to run (dotnet test --filter)
     type: string
     default: Category=BLE
+  # Tests that need Flex Web (RunMode=Web), e.g. NDT-5 in BLE-R1-C2, run in a second pass after the mobile suite,
+  # against the same Aspire backend. 'none' skips that pass. Device tests in the filter just report Ignored there
+  - name: webFilter
+    displayName: Browser tests to run after the mobile suite (dotnet test --filter, or none)
+    type: string
+    default: none
   - name: nodes
     displayName: Emulator nodes
     type: string
@@ -116,7 +122,8 @@ jobs:
             -Filter "${{ parameters.filter }}" `
             -ResultsDirectory "$(resultsDirectory)" `
             -RebuildApks:$${{ parameters.rebuildApks }} `
-            -Headless -Teardown
+            -RunMode Mobile `
+            -Headless -Teardown:$${{ eq(parameters.webFilter, 'none') }}
           exit $LASTEXITCODE
         workingDirectory: $(Pipeline.Workspace)/s/MobileAutomation
         displayName: Run the mobile suite
@@ -128,6 +135,28 @@ jobs:
           TestSettings__Node3__LoginEmail: $(TestSettings-Node3-LoginEmail)
           TestSettings__Node3__LoginPassword: $(TestSettings-Node3-LoginPassword)
 
+      # Browser pass: same Aspire (left running by the mobile step), Chrome (Flex) + Edge (Driver App); then teardown
+      - ${{ if ne(parameters.webFilter, 'none') }}:
+          - pwsh: |
+              & ./Setup/Run-Suite.ps1 `
+                -AspirePath "$(Pipeline.Workspace)/s/Aspire" `
+                -Nodes ${{ parameters.nodes }} `
+                -Filter "${{ parameters.webFilter }}" `
+                -ResultsDirectory "$(resultsDirectory)" `
+                -RunMode Web `
+                -Teardown
+              exit $LASTEXITCODE
+            workingDirectory: $(Pipeline.Workspace)/s/MobileAutomation
+            displayName: Run the browser tests (${{ parameters.webFilter }})
+            condition: succeededOrFailed()
+            env:
+              TestSettings__LoginEmail: $(TestSettings-LoginEmail)
+              TestSettings__LoginPassword: $(TestSettings-LoginPassword)
+              TestSettings__Node2__LoginEmail: $(TestSettings-Node2-LoginEmail)
+              TestSettings__Node2__LoginPassword: $(TestSettings-Node2-LoginPassword)
+              TestSettings__Node3__LoginEmail: $(TestSettings-Node3-LoginEmail)
+              TestSettings__Node3__LoginPassword: $(TestSettings-Node3-LoginPassword)
+
       - task: PublishTestResults@2
         displayName: Publish test results
         condition: always()
@@ -138,6 +167,17 @@ jobs:
           testRunTitle: Mobile suite (${{ parameters.filter }})
           # The suite step already fails the run when a test fails
           failTaskOnFailedTests: false
+
+      - ${{ if ne(parameters.webFilter, 'none') }}:
+          - task: PublishTestResults@2
+            displayName: Publish browser test results
+            condition: always()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: '**/web-tests.trx'
+              searchFolder: $(resultsDirectory)
+              testRunTitle: Browser tests (${{ parameters.webFilter }})
+              failTaskOnFailedTests: false
 
       - publish: $(resultsDirectory)
         artifact: mobile-results-$(System.JobAttempt)
