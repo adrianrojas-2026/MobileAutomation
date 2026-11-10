@@ -241,6 +241,25 @@ public class DriverHomePage : BasePage
         return caption;
     }
 
+    // What a driver's finger does on a Home button while an alert (e.g. the abandon prompt) covers it: sent as a
+    // pointer tap at the button's centre, not an element click, so it lands on whatever is on top there, as a real
+    // tap would. Returns the topmost element at that point ("ion-alert > ion-backdrop" when the alert covers it)
+    public string TapHomeButtonUnderAlert(string caption)
+    {
+        var button = FindVisible(ButtonByText(caption.ToUpperInvariant()), 5)
+            ?? throw new NoSuchElementException($"The Driver app '{caption}' button is not laid out on Home.");
+        string top = ((IJavaScriptExecutor)Driver).ExecuteScript(
+            "const r = arguments[0].getBoundingClientRect();" +
+            "const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);" +
+            "if (!el) return 'nothing';" +
+            "const name = e => e.tagName.toLowerCase() + (typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\\s+/)[0] : '');" +
+            "const alert = el.closest('ion-alert');" +
+            "return alert && alert !== el ? 'ion-alert > ' + name(el) : name(el);", button) as string ?? "nothing";
+        Console.WriteLine($"Driver app: tapping '{caption}' while an alert is open; topmost element there: {top}.");
+        new OpenQA.Selenium.Interactions.Actions(Driver).MoveToElement(button).Click().Perform();
+        return top;
+    }
+
     // Whether the abandon prompt is still open
     public bool IsAbandonPromptOpen
     {

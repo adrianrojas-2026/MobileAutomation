@@ -41,6 +41,7 @@ public static class QrBaselineReport
         ["QR-B08"] = new("QR reopens from the submitted card with the same payload", "FR-7", "TC-19, TC-22"),
         ["QR-B09"] = new("QR handoff with both devices in airplane mode", "Demo env", "TC-29"),
         ["QR-B10"] = new("Device Bluetooth readiness", "Risk: BLE support", "Lanes E / D"),
+        ["QR-B11"] = new("Second ticket while the abandon prompt is open", "FR-6 (defect)", "BLE abandon race"),
         // Part B: the BLE handoff itself; the last column names the QR baseline it is compared with
         ["TC-12"] = new("BLE happy path: ticket sent via Bluetooth becomes the Driver's current load", "FR-6, Check 2", "QR-B02"),
         ["TC-13"] = new("BLE payload parity: received load carries the ticket's QR payload unchanged", "FR-4, FR-6", "QR-B01")

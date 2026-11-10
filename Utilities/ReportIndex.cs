@@ -16,7 +16,7 @@ public static class ReportIndex
             "supported clients, runtime access, transfer progress) with the tests that check it and whether it is met."),
         new("QrBaselineReport_latest.html", "QR Baseline & BLE Readiness Report",
             "BLE Ticket Handoff POC: the QR end-to-end test (QR-A01: collection → Driver → disposal → receipt, " +
-            "Test_LoadDisposalCollectionFlow_…_E2E on each node), the QR handoff baselines (QR-B01…B10), their BLE " +
+            "Test_LoadDisposalCollectionFlow_…_E2E on each node), the QR handoff baselines (QR-B01…B11), their BLE " +
             "counterparts (TC-12 / TC-13) and the devices' Bluetooth readiness.")
     ];
 
