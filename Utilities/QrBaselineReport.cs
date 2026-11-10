@@ -46,6 +46,21 @@ public static class QrBaselineReport
         ["TC-13"] = new("BLE payload parity: received load carries the ticket's QR payload unchanged", "FR-4, FR-6", "QR-B01")
     };
 
+    // Scenarios run as one test case per node: each case is listed, and the scenario only counts as passed once every
+    // case has a result (LoadTicketCollectionTests' [TestCase] names)
+    private static readonly Dictionary<string, (string Node, string TestName)[]> ExpectedCases = new()
+    {
+        ["QR-A01"] =
+        [
+            ("Node1", "Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E_Node1_A14_A12"),
+            ("Node2", "Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E_Node2_A15_A13"),
+            ("Node3", "Test_LoadDisposalCollectionFlow_And_VerifySubmittedSynced_E2E_Node3_A17_A16")
+        ]
+    };
+
+    private static IEnumerable<(string Node, string TestName)> MissingCases(string id, List<BaselineTestResult> runs) =>
+        ExpectedCases.TryGetValue(id, out var cases) ? cases.Where(c => runs.All(r => r.TestName != c.TestName)) : [];
+
     private static readonly ConcurrentQueue<BaselineTestResult> Results = new();
     private static readonly ConcurrentDictionary<string, ConcurrentQueue<string>> BaselinesByTest = new();
     private static readonly ConcurrentDictionary<string, ConcurrentQueue<string>> NotesByTest = new();
@@ -263,9 +278,12 @@ public static class QrBaselineReport
         int Count(string outcome) => results.Count(r => r.Outcome == outcome);
         int carriedOver = results.Count(r => r.FinishedAt < RunStart);
         var byScenario = Scenarios.Keys.ToDictionary(id => id, id => results.Where(r => r.ScenarioIds.Contains(id)).ToList());
+        // A node case not run yet counts as Not run (Inconclusive), so one passing node does not pass the scenario
         string ScenarioOutcome(string id) => byScenario[id].Count == 0
             ? "Inconclusive"
-            : byScenario[id].OrderByDescending(r => Severity(r.Outcome)).First().Outcome;
+            : byScenario[id].Select(r => r.Outcome)
+                .Concat(MissingCases(id, byScenario[id]).Select(_ => "Inconclusive"))
+                .OrderByDescending(Severity).First();
 
         var html = new StringBuilder();
         html.Append($$"""
@@ -308,9 +326,17 @@ public static class QrBaselineReport
         foreach (var (id, scenario) in Scenarios)
         {
             var runs = byScenario[id];
-            string tests = runs.Count == 0
-                ? "not run"
-                : string.Join("<br>", runs.Select(r => $"{E(r.TestName)} · {E(r.Node)} · {r.DurationSeconds:0}s · {r.FinishedAt:MMM d HH:mm}"));
+            var lines = runs
+                .Select(r => (r.Node, Html: $"{Badge(r.Outcome)} {E(r.TestName)} · {E(r.Node)} · {r.DurationSeconds:0}s · {r.FinishedAt:MMM d HH:mm}"))
+                .Concat(MissingCases(id, runs).Select(c => (c.Node, Html: $"{Badge("Inconclusive")} {E(c.TestName)} · {E(c.Node)} · not run yet")))
+                .OrderBy(l => l.Node, StringComparer.Ordinal)
+                .Select(l => l.Html)
+                .ToList();
+            if (ExpectedCases.TryGetValue(id, out var expected))
+            {
+                lines.Insert(0, $"<b>{expected.Length - MissingCases(id, runs).Count()} of {expected.Length} nodes run</b>");
+            }
+            string tests = lines.Count == 0 ? "not run" : string.Join("<br>", lines);
             string messages = string.Join("\n", runs.Select(r => r.Message).Where(m => m.Length > 0).Distinct());
             html.Append($"<tr><td><b>{id}</b></td><td>{E(scenario.Title)}</td><td>{E(scenario.Requirements)}</td><td>{E(scenario.BleCounterpart)}</td>" +
                         $"<td>{Badge(ScenarioOutcome(id))}</td><td>{tests}</td><td class=\"msg\">{E(Shorten(messages, 900))}</td></tr>");
