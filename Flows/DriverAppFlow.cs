@@ -27,11 +27,57 @@ public static class DriverAppFlow
     }
 
     // Starts the Driver app and leaves it on the Welcome screen (a cold start opens there, before GET STARTED).
-    // Returns the app, or null when it opened somewhere else
-    public static IWebDriver? StartOnWelcome()
+    // With showTutorial the Tutorial is reset first, so GET STARTED leads to it even on an emulator that has already
+    // skipped it. Returns the app, or null when it opened somewhere else
+    public static IWebDriver? StartOnWelcome(bool showTutorial = false)
     {
         var driverApp = Launch();
-        return new DriverOnboardingPage(driverApp).IsWelcomeScreenDisplayed(60) ? driverApp : null;
+        var onboarding = new DriverOnboardingPage(driverApp);
+        if (!onboarding.IsWelcomeScreenDisplayed(60)) return null;
+        if (showTutorial && driverApp is AndroidDriver android)
+        {
+            ResetTutorial(android);
+            if (!onboarding.IsWelcomeScreenDisplayed(60)) return null;
+        }
+        return driverApp;
+    }
+
+    // Driver app preference that SKIP sets to false (Capacitor Preferences, Driver-App util/constants.ts)
+    private const string OpenTutorialKey = "open-tutorial-after-login";
+
+    // The Welcome page reads the Tutorial preference when it loads, so the preference is removed in the app's WebView
+    // and the app cold-started to read it again. A failed reset is only logged; the caller sees no Tutorial
+    private static void ResetTutorial(AndroidDriver android)
+    {
+        DriverFactory.SwitchToWebViewContext(android);
+        try
+        {
+            var error = ((IJavaScriptExecutor)android).ExecuteAsyncScript(@"
+                var done = arguments[arguments.length - 1];
+                var cap = window.Capacitor;
+                if (!cap) { done('window.Capacitor is missing'); return; }
+                var args = { key: arguments[0] };
+                var removal = cap.Plugins && cap.Plugins.Preferences
+                    ? cap.Plugins.Preferences.remove(args)
+                    : cap.nativePromise('Preferences', 'remove', args);
+                removal.then(function () { done(null); }, function (e) { done(String((e && e.message) || e)); });",
+                OpenTutorialKey) as string;
+            Console.WriteLine(error == null
+                ? $"🚚 Driver app: Tutorial reset ('{OpenTutorialKey}' removed)."
+                : $"🚚 Driver app: could not reset the Tutorial ({error}).");
+        }
+        catch (WebDriverException e)
+        {
+            Console.WriteLine($"🚚 Driver app: could not reset the Tutorial ({e.Message.Split('\n')[0]}).");
+        }
+        finally
+        {
+            android.Context = "NATIVE_APP";
+        }
+
+        string package = DriverPackage(android);
+        android.TerminateApp(package);
+        android.ActivateApp(package);
     }
 
     private static IWebDriver Launch()

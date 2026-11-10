@@ -276,6 +276,104 @@ namespace RecoveryTrac.AutomatedTests
             BaselineRecorder.Save("QR-B09", _node, new { ticketId, offlineLoad });
         }
 
+        // QR-B11: QR counterpart of the BLE defect "a load received while the abandon prompt is open is deleted on
+        // Confirm" (NearbyReceiveDuringAbandonTests). With QR a load only arrives when the driver opens the scanner,
+        // and the abandon prompt ("Are you sure you want to abandon the active QR code?", Confirm counting down from
+        // 5) is modal, so this records whether a tap on Scan Receipt Code (the only scan button Home offers with a load
+        // active) gets past the open prompt, and what Confirm then removes. Ticket B is staged in the camera the whole
+        // time, as if the driver were holding the next monitor's QR up.
+        protected void SecondTicketDuringAbandonPrompt_BehaviorIsRecorded()
+        {
+            var first = SubmitTicket(TestName + " A");
+            var second = SubmitTicket(TestName + " B", first.Flow);
+            string loadB = second.TicketId.TrimStart('#');
+            var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
+
+            QrScanFeed.Stage(driverApp, first.QrPng, rasterizer: DriverFactory.DriverFlex, DriverFactory.DriverCameraFeedPath);
+            driverHome.ScanQrCode();
+            string loadA = driverHome.WaitForActiveLoad();
+            string homeUrl = driverApp.Url;
+
+            // The driver opens the abandon prompt for load A, then, while Confirm counts down, taps Scan Receipt Code
+            // with ticket B's QR in front of the camera
+            QrScanFeed.Stage(driverApp, second.QrPng, rasterizer: DriverFactory.DriverFlex, DriverFactory.DriverCameraFeedPath);
+            Assume.That(driverHome.OpenAbandonLoadPrompt(), Is.True, "Setup: the Driver app showed no abandon prompt after Cancel Load.");
+            string? captionAtOpen = driverHome.AbandonConfirmCaption;
+            string topmostAtTap = driverHome.TapHomeButtonUnderAlert("Scan Receipt Code");
+            bool countdownAtTap = driverHome.IsAbandonCountdownRunning;
+            Thread.Sleep(2000); // the scanner page would open (and read the staged QR) within this
+            string urlAfterTap = driverApp.Url;
+            bool scannerOpened = urlAfterTap.Contains("scanner", StringComparison.OrdinalIgnoreCase);
+            bool promptOpenAfterTap = driverHome.IsAbandonPromptOpen;
+            string loadAfterTap = scannerOpened ? string.Empty : driverHome.CurrentLoad;
+            Console.WriteLine($"🔳 Tap on Scan Receipt Code during the abandon prompt ('{captionAtOpen}'): topmost {topmostAtTap}, " +
+                              $"scanner opened {scannerOpened} ({urlAfterTap}), prompt still open {promptOpenAfterTap}, load '{loadAfterTap}'.");
+
+            // The driver goes on to abandon load A: Confirm on the prompt, reopened when the tap closed it
+            string abandonedWith = "not confirmed (scanner opened)";
+            if (!scannerOpened)
+            {
+                if (!promptOpenAfterTap)
+                {
+                    Assume.That(driverHome.OpenAbandonLoadPrompt(), Is.True, "Setup: the abandon prompt could not be reopened after the tap closed it.");
+                }
+                abandonedWith = driverHome.ConfirmAbandonLoad();
+            }
+            bool scanQrAfterConfirm = driverHome.IsScanQrCodeShown(timeoutSeconds: 10);
+            string loadAfterConfirm = driverHome.HasActiveLoad ? driverHome.CurrentLoad : string.Empty;
+
+            // Load B through the normal path: Scan QR Code once Home has no load
+            string loadAfterScanB = string.Empty;
+            string? payloadAfterScanB = null;
+            if (scanQrAfterConfirm)
+            {
+                QrScanFeed.Stage(driverApp, second.QrPng, rasterizer: DriverFactory.DriverFlex, DriverFactory.DriverCameraFeedPath);
+                driverHome.ScanQrCode(cancelActiveLoad: false);
+                loadAfterScanB = driverHome.WaitForActiveLoad();
+                payloadAfterScanB = QrScanFeed.Decode(driverHome.GetCurrentLoadQrPng(), DriverFactory.DriverFlex);
+            }
+
+            BaselineRecorder.Save("QR-B11", _node, new
+            {
+                firstTicketId = first.TicketId,
+                secondTicketId = second.TicketId,
+                loadA,
+                homeUrl,
+                captionAtOpen,
+                countdownAtTap,
+                topmostAtTap,
+                scannerOpened,
+                urlAfterTap,
+                promptOpenAfterTap,
+                loadAfterTap,
+                abandonedWith,
+                loadAfterConfirm,
+                loadAfterScanB,
+                payloadMatchesQrB = payloadAfterScanB == second.QrText,
+                outcome = scannerOpened ? "scanner reachable during the abandon prompt"
+                    : promptOpenAfterTap ? "tap blocked, prompt stayed open"
+                    : "tap closed the prompt, no scan"
+            });
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(scannerOpened, Is.False,
+                    $"With the abandon prompt for load {loadA} open, a tap on Scan Receipt Code opened the scanner ({urlAfterTap}): " +
+                    "a new load can reach the Driver app behind the prompt with QR too.");
+                if (!scannerOpened)
+                {
+                    Assert.That(loadAfterTap, Is.EqualTo(loadA),
+                        $"While the abandon prompt was open the active load changed from {loadA} to '{loadAfterTap}' without a scan.");
+                }
+                Assert.That(scanQrAfterConfirm && loadAfterConfirm.Length == 0, Is.True,
+                    $"Confirm on the abandon prompt did not leave Home with no load and Scan QR Code (load '{loadAfterConfirm}').");
+                Assert.That(loadAfterScanB, Is.EqualTo(loadB),
+                    $"After abandoning load {loadA}, scanning ticket {second.TicketId} did not make it the active load ('{loadAfterScanB}').");
+                Assert.That(payloadAfterScanB, Is.EqualTo(second.QrText),
+                    $"Load {loadB} carries a different payload than ticket {second.TicketId}'s QR code.");
+            });
+        }
+
         private record ScanObservation(DriverAlert? Alert, bool HadLoadAfterScan, string LoadAfterScan, bool HadLoadAfterRestart, string LoadAfterRestart);
 
         // Scans the given text, records what the app did, then restarts it to see whether anything was stored
@@ -385,5 +483,9 @@ namespace RecoveryTrac.AutomatedTests
         // QR-B09: QR handoff with this node's two devices in airplane mode (demo conditions)
         [Test]
         public void QR_B09_QrHandoff_WorksInAirplaneMode() => QrHandoff_WorksInAirplaneMode();
+
+        // QR-B11: a second ticket while the abandon prompt is open (QR counterpart of the BLE abandon-race defect)
+        [Test]
+        public void QR_B11_SecondTicketDuringAbandonPrompt_BehaviorIsRecorded() => SecondTicketDuringAbandonPrompt_BehaviorIsRecorded();
     }
 }

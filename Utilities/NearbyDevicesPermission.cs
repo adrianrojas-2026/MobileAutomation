@@ -79,24 +79,54 @@ public static class NearbyDevicesPermission
             if (dialog == null) return false;
 
             Console.WriteLine($"📱 Android asks: '{dialog.Text.Trim()}'. Tapping {buttonName}...");
-            // Android ignores a tap on the permission dialog while another window covers it (e.g. a toast) or while
-            // a busy emulator's System UI lags, so tap again until the dialog closes
-            var deadline = DateTime.UtcNow.AddSeconds(30);
-            for (int tap = 1; ; tap++)
+            bool Closed(int seconds)
             {
-                driver.FindElements(button).FirstOrDefault(b => b.Displayed)?.Click();
-                var closed = new WebDriverWait(driver, TimeSpan.FromSeconds(5));
+                var closed = new WebDriverWait(driver, TimeSpan.FromSeconds(seconds));
                 closed.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
                 try
                 {
                     closed.Until(d => !d.FindElements(Dialog).Any());
                     return true;
                 }
-                catch (WebDriverTimeoutException) when (DateTime.UtcNow < deadline)
+                catch (WebDriverTimeoutException)
                 {
-                    Console.WriteLine($"📱 The dialog is still open after tap {tap}; tapping {buttonName} again...");
+                    return false;
                 }
             }
+
+            // Android ignores a tap on the permission dialog while another window covers it (e.g. a toast) or while
+            // a busy emulator's System UI lags, so tap again until the dialog closes
+            for (int tap = 1; tap <= 2; tap++)
+            {
+                driver.FindElements(button).FirstOrDefault(b => b.Displayed)?.Click();
+                if (Closed(5)) return true;
+                Console.WriteLine($"📱 The dialog is still open after tap {tap} on {buttonName}.");
+            }
+
+            // Seen on the Android 15 emulators: the dialog has focus but its window gets no touches, which go to the
+            // app's window behind it and are dropped ("Not sending touch gesture to ...ActivityRecordInputSink ...
+            // NO_INPUT_CHANNEL"). Keys go to the focused window instead: Back closes the dialog as a refusal, the same
+            // answer as Don't allow for this request. Allow has no key, so it is tapped with adb input at the
+            // button's centre
+            string udid = AdbHelper.GetUdid(driver)!;
+            for (int attempt = 1; attempt <= 3; attempt++)
+            {
+                if (button == DenyButton)
+                {
+                    Console.WriteLine($"📱 Taps are not reaching the dialog; pressing Back to refuse (attempt {attempt})...");
+                    AdbHelper.Run(udid, "shell input keyevent KEYCODE_BACK");
+                }
+                else if (driver.FindElements(button).FirstOrDefault(b => b.Displayed) is { } target)
+                {
+                    var r = target.Rect;
+                    Console.WriteLine($"📱 Taps are not reaching the dialog; tapping {buttonName} with adb input (attempt {attempt})...");
+                    AdbHelper.Run(udid, $"shell input tap {r.X + r.Width / 2} {r.Y + r.Height / 2}");
+                }
+                if (Closed(5)) return true;
+            }
+            throw new WebDriverTimeoutException(
+                $"Android's Nearby devices dialog stayed open after tapping {buttonName} twice and the adb fallback three times. " +
+                "Check the emulator's screen: taps may not be reaching the dialog.");
         }
         finally
         {

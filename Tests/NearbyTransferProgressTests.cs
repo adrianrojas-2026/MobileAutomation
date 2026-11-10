@@ -1,5 +1,6 @@
 using MobileAutomation.Tests.Reporting;
 using System.Text.RegularExpressions;
+using MobileAutomation.Tests.Drivers;
 using MobileAutomation.Tests.Pages;
 using MobileAutomation.Tests.Tests;
 using MobileAutomation.Tests.Utilities;
@@ -13,10 +14,10 @@ namespace RecoveryTrac.AutomatedTests
     // (Connecting… then Sending data…, with a spinner and Cancel) that ignores taps outside it. A Cancel confirmed before
     // the Driver App commits returns to the unchanged ticket.
     // A transfer between emulators takes about a second, so the menu is recorded from inside the WebView and checked
-    // afterwards rather than polled. The POC picker shows 'Send via Bluetooth', a progress bar and no Cancel, so these
-    // fail until R1; each failure names its requirement ID.
-    // Pending until Flex ships Story 4.8 (NDT-10 progress view and Cancel); until then the send view keeps the earlier
-    // 'Send via Bluetooth' title, a progress bar and no Cancel. Move back to "BLE-R1-C2" once 4.8 is in the APK
+    // afterwards rather than polled. Each failure names its requirement ID.
+    // Story 4.8 (NDT-10 progress view and Cancel) is in the Flex code as of 2026-11-10: a successful send closes the
+    // menu with the LDT-10 toast 'Data sent to …', a canceled one closes it with no toast. Kept in "BLE-R1-C2-Pending"
+    // until both pass against that build; then move it back to "BLE-R1-C2"
     [TestFixture]
     [Category("BLE-R1-C2-Pending")]
     [NonParallelizable]
@@ -35,10 +36,13 @@ namespace RecoveryTrac.AutomatedTests
             PrepareGridDriverApps();
             var menu = OpenNearby(flow, ticketId);
             var own = FindOwnDriverApp(menu);
+            // Flex ignores a tap on the 'Loading truck details…' card (decision E5), and the card is keyed by the truck
+            // once its details arrive, so pick it once it is selectable, under its current key
+            var card = WaitForSelectableCard(menu, own);
             string? menuBefore = menu.Snapshot().Overlay;
 
             menu.StartRecording();
-            menu.SelectCard(own.Key);
+            menu.SelectCard(card.Key);
             bool? scanningAfterSelect = IsFlexScanning(flexUdid);
             string? load = null;
             try
@@ -57,13 +61,27 @@ namespace RecoveryTrac.AutomatedTests
             var inProgress = afterSelect.Where(s => s.Open && s.Progress != null).ToList();
             var transferring = inProgress.Where(s => TransferStates.Contains(s.Progress!.Text)).ToList();
             var cancelChecked = transferring.Count > 0 ? transferring : inProgress;
+            // Flex renders Cancel with the progress text in the same pass (*ngIf="busy"), but a new ion-button stays
+            // hidden until Ionic hydrates it, a frame or two; the in-page recording can catch that frame. So Cancel may
+            // be missing only within the first CancelRenderMs of the progress view, and every state must show it
+            const long CancelRenderMs = 300;
+            long firstProgressT = inProgress.FirstOrDefault()?.T ?? 0;
+            var withoutCancel = cancelChecked.Where(s => !s.HasButton(Cancel)).ToList();
+            var withoutCancelLater = withoutCancel.Where(s => s.T - firstProgressT > CancelRenderMs).ToList();
+            var statesWithoutCancel = cancelChecked.GroupBy(s => s.Progress!.Text)
+                .Where(g => !g.Any(s => s.HasButton(Cancel))).Select(g => g.Key).ToList();
+            if (withoutCancel.Count > 0)
+            {
+                Console.WriteLine($"📡 {withoutCancel.Count} of {cancelChecked.Count} in-progress snapshots without '{Cancel}', " +
+                                  $"{withoutCancel.Count - withoutCancelLater.Count} of them within {CancelRenderMs} ms of the progress view appearing.");
+            }
             var states = inProgress.Select(s => $"{s.Progress!.Text}{(s.Progress.Spinner ? " (spinner)" : string.Empty)}").Distinct().ToList();
-            Console.WriteLine($"📡 After selecting '{own.Key}': [{string.Join(" > ", states)}], titles [{string.Join(", ", inProgress.Select(s => s.Title).Distinct())}]; " +
+            Console.WriteLine($"📡 After selecting '{card.Key}': [{string.Join(" > ", states)}], titles [{string.Join(", ", inProgress.Select(s => s.Title).Distinct())}]; " +
                               $"Flex scanning: {scanningAfterSelect}; Driver App load: '{load}'.");
 
             BaselineRecorder.Save("NDT-10-P01", Node, new
             {
-                ticketId, own.Key, states, titles = inProgress.Select(s => s.Title).Distinct(), scanningAfterSelect, load,
+                ticketId, card.Key, states, titles = inProgress.Select(s => s.Title).Distinct(), scanningAfterSelect, load,
                 final = afterSelect.LastOrDefault()?.ToString()
             });
 
@@ -81,21 +99,22 @@ namespace RecoveryTrac.AutomatedTests
                     $"10082-NDT-10-P01 not met: no progress was shown after the Driver App was selected (states after selecting: {string.Join(" / ", afterSelect.Select(s => s.ToString()).Distinct().Take(5))}).");
                 Assert.That(afterSelect.TakeWhile(s => s.Progress == null).All(s => s.Open) && inProgress.All(s => s.Overlay == menuBefore), Is.True,
                     "10082-NDT-10-P01 not met: the discovery menu closed or was replaced by another overlay instead of turning into the progress view.");
-                Assert.That(inProgress.All(s => s.NoResults == null && s.Cards.All(c => c.Key == own.Key)), Is.True,
+                Assert.That(inProgress.All(s => s.NoResults == null && s.Cards.All(c => c.Key == card.Key)), Is.True,
                     "10082-NDT-10-P01 not met: the progress view still shows discovery content (other results or the no-results state).");
                 Assert.That(inProgress.Count > 0 && inProgress.All(s => s.Title == SendDataTitle), Is.True,
                     $"10082-NDT-10-P02 not met: the progress menu's title is not '{SendDataTitle}' (titles: [{string.Join(", ", inProgress.Select(s => s.Title).Distinct())}]).");
-                Assert.That(inProgress.All(s => s.Card(own.Key) != null || s.Lines.Any(l => l.Contains(own.Key))), Is.True,
-                    $"10082-NDT-10-P03 not met: the selected Driver App '{own.Key}' is not shown throughout the progress view.");
+                Assert.That(inProgress.All(s => s.Card(card.Key) != null || s.Lines.Any(l => l.Contains(card.Key))), Is.True,
+                    $"10082-NDT-10-P03 not met: the selected Driver App '{card.Key}' is not shown throughout the progress view.");
                 Assert.That(inProgress.Any(s => DriverCard.TextShowsDistance(s.Lines)), Is.False,
                     "10082-NDT-10-P03 not met: the progress view still shows the discovery distance.");
                 Assert.That(inProgress.Any(s => s.Progress!.Text == ConnectingText && s.Progress.Spinner), Is.True,
                     $"10082-NDT-10-P04 not met: '{ConnectingText}' with a spinner was not shown while connecting (states: [{string.Join(" > ", states)}]).");
                 Assert.That(inProgress.Any(s => s.Progress!.Text == SendingDataText && s.Progress.Spinner), Is.True,
                     $"10082-NDT-10-P06 not met: '{SendingDataText}' with a spinner was not shown while sending (states: [{string.Join(" > ", states)}]).");
-                Assert.That(cancelChecked.Count > 0 && cancelChecked.All(s => s.HasButton(Cancel)), Is.True,
+                Assert.That(cancelChecked.Count > 0 && withoutCancelLater.Count == 0 && statesWithoutCancel.Count == 0, Is.True,
                     $"10082-NDT-10-P07 not met: '{Cancel}' is not offered throughout the in-progress states " +
-                    $"(first without it: {cancelChecked.FirstOrDefault(s => !s.HasButton(Cancel))}).");
+                    $"(states never showing it: [{string.Join(", ", statesWithoutCancel)}]; first without it after {CancelRenderMs} ms: " +
+                    $"{withoutCancelLater.FirstOrDefault()?.ToString() ?? "none"}).");
                 Assert.That(afterSelect.Any(s => s.Determinate), Is.False,
                     $"10082-NDT-10-N01 not met: Flex showed determinate progress (a progress bar, percentage or byte/packet count) ({afterSelect.FirstOrDefault(s => s.Determinate)}).");
             });
@@ -114,10 +133,14 @@ namespace RecoveryTrac.AutomatedTests
             var cardBefore = flow.Forms.GetSubmittedCardValues(ticketId);
             var menu = OpenNearby(flow, ticketId);
             var own = FindOwnDriverApp(menu);
+            var card = WaitForSelectableCard(menu, own);
 
+            // FEAT-LDT-10: a successful send also closes the menu, with the toast 'Data sent to …'; a canceled one closes
+            // it with no toast (P10). The toast tells the two apart
+            IonicToasts.StartRecording(DriverFactory.DriverFlex);
             menu.StartRecording();
-            Assert.That(menu.SelectThenDismissAndCancel(own.Key, dismissAfterMs: 150, cancelAfterMs: 500), Is.True,
-                $"The Driver App card '{own.Key}' was gone before it could be selected.");
+            Assert.That(menu.SelectThenDismissAndCancel(card.Key, dismissAfterMs: 150, cancelAfterMs: 500), Is.True,
+                $"The Driver App card '{card.Key}' was gone before it could be selected.");
             Thread.Sleep(1000);
             bool closed = menu.WaitFor(s => !s.Open, 5) != null;
             // Long enough for a commit the Cancel did not stop to show on the Driver App
@@ -125,6 +148,8 @@ namespace RecoveryTrac.AutomatedTests
             bool driverHasLoad = own.Home.HasActiveLoad;
             var recording = menu.StopRecording();
             var final = recording.Log.LastOrDefault();
+            string? flexToast = IonicToasts.Message(DriverFactory.DriverFlex, timeoutSeconds: 2);
+            bool reportedSent = flexToast?.StartsWith(DataSentPrefix, StringComparison.Ordinal) == true;
 
             long? tDismiss = recording.MarkTime("tap-outside");
             long? tCancel = recording.MarkTime("cancel");
@@ -134,9 +159,10 @@ namespace RecoveryTrac.AutomatedTests
             long passiveWindowEnd = tCancel ?? tCancelMissing ?? (tDismiss ?? 0) + 1000;
             bool closedByPassive = dismissedWhileInProgress && recording.Between(tDismiss!.Value, passiveWindowEnd).Any(s => !s.Open);
             var atCancel = tCancel is { } c ? recording.At(c) : tCancelMissing is { } m ? recording.At(m) : null;
-            bool flexCanceled = tCancel is { } tc && recording.Log.Any(s => s.T > tc && s.T <= tc + 3000 && !s.Open);
+            bool closedAfterCancel = tCancel is { } tc && recording.Log.Any(s => s.T > tc && s.T <= tc + 3000 && !s.Open);
+            bool flexCanceled = closedAfterCancel && !reportedSent;
             Console.WriteLine($"📡 At the tap outside / Escape: {atDismiss}. At Cancel ({(tCancel != null ? "tapped" : "not offered")}): {atCancel}. " +
-                              $"Menu closed: {closed}; Flex canceled: {flexCanceled}; Driver App has a load: {driverHasLoad}.");
+                              $"Menu closed: {closed}; Flex toast: '{flexToast}'; Flex canceled: {flexCanceled}; Driver App has a load: {driverHasLoad}.");
 
             IReadOnlyList<string>? ticketsAfter = null;
             Dictionary<string, string>? cardAfter = null;
@@ -155,8 +181,8 @@ namespace RecoveryTrac.AutomatedTests
 
             BaselineRecorder.Save("NDT-10-P10", Node, new
             {
-                ticketId, own.Key, dismissedWhileInProgress, closedByPassive, cancelTapped = tCancel != null, atCancel = atCancel?.ToString(),
-                flexCanceled, driverHasLoad, final = final?.ToString()
+                ticketId, card.Key, dismissedWhileInProgress, closedByPassive, cancelTapped = tCancel != null, atCancel = atCancel?.ToString(),
+                flexToast, flexCanceled, driverHasLoad, final = final?.ToString()
             });
 
             if (!dismissedWhileInProgress)
@@ -194,8 +220,11 @@ namespace RecoveryTrac.AutomatedTests
                 }
                 else if (driverHasLoad)
                 {
-                    Assert.That(final?.Lines.Any(l => Canceled.IsMatch(l)), Is.Not.True,
-                        $"10082-NDT-10-E01 not met: the Driver App committed the transfer, yet Flex reports it as canceled ({final}).");
+                    // Success wins: Flex reports the send as done (LDT-10 toast), not as canceled
+                    Assert.That(final?.Lines.Any(l => Canceled.IsMatch(l)) == true || (flexToast != null && Canceled.IsMatch(flexToast)), Is.False,
+                        $"10082-NDT-10-E01 not met: the Driver App committed the transfer, yet Flex reports it as canceled ({final}; toast '{flexToast}').");
+                    Assert.That(reportedSent, Is.True,
+                        $"10082-NDT-10-E01 not met: the Driver App committed the transfer, but Flex did not report it as sent (toast '{flexToast}', {final}).");
                 }
                 else
                 {

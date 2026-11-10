@@ -89,13 +89,13 @@ namespace RecoveryTrac.AutomatedTests
         {
             var search = OpenNearbyWithOnlyOtherDevices();
 
-            var driverApp = DriverAppFlow.StartOnWelcome();
+            var driverApp = DriverAppFlow.StartOnWelcome(showTutorial: true);
             Assume.That(driverApp, Is.Not.Null, "The Driver app did not open on its Welcome screen, so this case cannot be set up.");
             Console.WriteLine("🚚 Driver app is on Welcome (GET STARTED not tapped).");
             string? onWelcome = FindOwnDriverApp(search, "10082-NDT-1-N01 (Welcome)");
 
-            // With noReset an emulator that has seen the Tutorial goes from GET STARTED straight to Home, so the Tutorial
-            // is only checked when it shows; the Welcome result is reported either way
+            // The Tutorial was reset above (with noReset an emulator that skipped it once goes straight to Home); if it
+            // still does not show, the Tutorial is a warning and the Welcome result is reported either way
             var onboarding = new DriverOnboardingPage(driverApp!);
             onboarding.ClickGetStarted();
             bool tutorialShown = onboarding.IsTutorialDisplayed(30);
@@ -109,7 +109,7 @@ namespace RecoveryTrac.AutomatedTests
             else
             {
                 tutorialSkipped = onboarding.IsHomeDisplayed(5)
-                    ? "it went from GET STARTED straight to Home (Tutorial already seen on this emulator)"
+                    ? "it went from GET STARTED straight to Home (the Tutorial reset did not take; see the log above)"
                     : $"it did not show the Tutorial after GET STARTED ({onboarding.DescribeLocation()})";
                 Console.WriteLine($"🚚 Driver app: Tutorial not checked, {tutorialSkipped}.");
             }

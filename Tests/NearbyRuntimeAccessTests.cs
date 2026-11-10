@@ -163,6 +163,11 @@ namespace RecoveryTrac.AutomatedTests
                     }
                 }
                 Assume.That(denied, Is.True, $"Android never asked for Nearby devices access, so E03 cannot be set up ({menu.Snapshot()}).");
+                // A refusal that never reached Android (an emulator whose dialog takes no input, which then closes on
+                // its own) leaves Flex with access, and the checks below would blame Flex for it
+                Assume.That(NearbyDevicesPermission.IsGranted(flexUdid, FlexPackage, NearbyDevicesPermission.Flex), Is.False,
+                    "Setup: the Nearby devices dialog closed but Flex still has the permission, so the refusal never reached Android " +
+                    "(check the emulator: logcat shows 'no focused window' / 'NO_INPUT_CHANNEL' when its dialog takes no input; cold boot it).");
 
                 Thread.Sleep(3000);
                 bool? scanning = IsFlexScanning(flexUdid);

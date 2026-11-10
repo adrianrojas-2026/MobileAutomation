@@ -15,8 +15,9 @@ public static class ReportIndex
             "Feature #10082 Release 1: each NDT requirement (Driver App discoverability, Flex discovery menu, identity cards, " +
             "supported clients, runtime access, transfer progress) with the tests that check it and whether it is met."),
         new("QrBaselineReport_latest.html", "QR Baseline & BLE Readiness Report",
-            "BLE Ticket Handoff POC: the QR handoff baselines (QR-A01, QR-B01…B10), their BLE counterparts (TC-12 / TC-13) " +
-            "and the devices' Bluetooth readiness.")
+            "BLE Ticket Handoff POC: the QR end-to-end test (QR-A01: collection → Driver → disposal → receipt, " +
+            "Test_LoadDisposalCollectionFlow_…_E2E on each node), the QR handoff baselines (QR-B01…B11), their BLE " +
+            "counterparts (TC-12 / TC-13) and the devices' Bluetooth readiness.")
     ];
 
     // directory: the reports folder; the shared TestResults/Reports when omitted (a test run)

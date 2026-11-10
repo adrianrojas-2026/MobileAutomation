@@ -149,7 +149,7 @@ public class LoginPage : BasePage
     private string DescribeVisibleErrors()
     {
         By errors = Driver is OpenQA.Selenium.Appium.Android.AndroidDriver
-            ? By.XPath("//*[contains(@text, 'nable') or contains(@text, 'nvalid') or contains(@text, 'rror') or contains(@text, 'ailed') or contains(@text, 'incorrect')]")
+            ? By.XPath("//*[contains(@text, 'nable') or contains(@text, 'nvalid') or contains(@text, 'rror') or contains(@text, 'ailed') or contains(@text, 'incorrect') or contains(@text, 'do not match')]")
             : By.CssSelector("ion-toast, ion-alert, .loginError, .error-message");
         var texts = Driver.FindElements(errors).Where(e => e.Displayed).Select(Describe).Where(t => t.Length > 0).ToList();
         return texts.Count > 0 ? string.Join(" | ", texts) : "none";
