@@ -73,7 +73,11 @@ public class FormsPage : BasePage
         OpenSubmittedTab();
         // Brief settle so a just-submitted card has time to render before the list is read
         Thread.Sleep(1000);
-        return Driver.FindElements(TicketIdLabels).Select(e => e.Text.Trim()).Where(t => t.Length > 0).ToList();
+        // The list re-renders when a card's sync status changes, so a label that goes stale mid-read means the
+        // whole list is read again
+        var wait = new WebDriverWait(Driver, TimeSpan.FromSeconds(15));
+        wait.IgnoreExceptionTypes(typeof(StaleElementReferenceException));
+        return wait.Until(d => d.FindElements(TicketIdLabels).Select(e => e.Text.Trim()).Where(t => t.Length > 0).ToList());
     }
 
     // Reads the "Label: value" rows (Truck Capacity, Driver Name, ...) from a submitted ticket card. The list
