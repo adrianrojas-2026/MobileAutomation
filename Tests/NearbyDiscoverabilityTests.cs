@@ -218,6 +218,108 @@ namespace RecoveryTrac.AutomatedTests
                 "without the driver re-enabling discoverability.");
         }
 
+        // 10082-NDT-1-P03 with the screen locked: the Driver app on Home with no active load (with one, it keeps the
+        // screen awake for the QR) is left alone until the screen times out. Locked, it is not in the foreground, so it
+        // must not be listed (FEAT-NDT-1 covers the foreground only; confirmed as expected 2026-11-10). Once the driver
+        // unlocks the phone it is listed again, without anything tapped in the app
+        [Test]
+        [Requirements("NDT-1-P03")]
+        public void NDT1_P03_DriverScreenTimedOut_NotDiscoverable_ThenDiscoverableOnUnlock()
+        {
+            var search = OpenNearbyWithOnlyOtherDevices();
+
+            var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
+            driverHome.CancelStaleLoadIfPresent();
+            var driverAndroid = (AndroidDriver)driverApp;
+            string driverUdid = AdbHelper.GetUdid(driverAndroid)!;
+            string package = DriverAppFlow.DriverPackage(driverAndroid);
+
+            string? before = FindOwnDriverApp(search, "10082-NDT-1-P03 (screen on)");
+            Assert.That(before, Is.Not.Null,
+                "10082-NDT-1-P03 precondition (P01) not met: Flex did not list the Driver app open on Home, so the screen lock cannot be checked.");
+
+            // A short screen timeout, and no "stay awake while charging" (emulators count as plugged in)
+            string timeoutBefore = AdbHelper.Read(driverUdid, "shell settings get system screen_off_timeout").Trim();
+            string stayOnBefore = AdbHelper.Read(driverUdid, "shell settings get global stay_on_while_plugged_in").Trim();
+            string? whileLocked;
+            string lockedBy = "not locked";
+            bool screenOff, backOnScreen;
+            try
+            {
+                AdbHelper.Run(driverUdid, "shell settings put global stay_on_while_plugged_in 0");
+                AdbHelper.Run(driverUdid, "shell settings put system screen_off_timeout 15000");
+                Console.WriteLine("🚚 Driver app left alone on Home; waiting for the screen to time out (15 s)...");
+                screenOff = WaitFor(() => !IsScreenOn(driverUdid), 40);
+                if (screenOff)
+                {
+                    lockedBy = "screen timeout";
+                }
+                else
+                {
+                    // Under Appium the Driver app's window carries KEEP_SCREEN_ON (seen 2026-11-10; not set by the app's
+                    // code, and not there when the app runs without a session), so the timeout never fires. The power
+                    // key leaves the phone in the same state: screen off, keyguard up, the app paused
+                    Console.WriteLine($"🚚 The screen did not time out within 40 s ({ScreenAwakeHolders(driverUdid)}); locking it with the power key.");
+                    AdbHelper.Run(driverUdid, "shell input keyevent KEYCODE_SLEEP");
+                    screenOff = WaitFor(() => !IsScreenOn(driverUdid), 10);
+                    lockedBy = "power key";
+                }
+                Assume.That(screenOff, Is.True, $"Setup: the screen of {driverUdid} could not be locked ({ScreenAwakeHolders(driverUdid)}).");
+                Console.WriteLine($"🚚 Driver screen off and locked ({lockedBy}).");
+                Thread.Sleep(3000); // let the app's pause stop the advertiser before the new search
+                whileLocked = FindOwnDriverApp(search, "10082-NDT-1-P03 (screen locked)", timeoutSeconds: 15);
+            }
+            finally
+            {
+                AdbHelper.Run(driverUdid, $"shell settings put system screen_off_timeout {(int.TryParse(timeoutBefore, out int t) ? t : 60000)}");
+                AdbHelper.Run(driverUdid, $"shell settings put global stay_on_while_plugged_in {(int.TryParse(stayOnBefore, out int s) ? s : 0)}");
+                // The driver wakes and unlocks the phone (emulators have no PIN, so the keyguard just goes away)
+                AdbHelper.Run(driverUdid, "shell input keyevent KEYCODE_WAKEUP");
+                AdbHelper.Run(driverUdid, "shell wm dismiss-keyguard");
+                backOnScreen = WaitFor(() => IsScreenOn(driverUdid) && IsResumed(driverUdid, package), 15);
+            }
+
+            Assume.That(backOnScreen, Is.True, $"Setup: after unlocking {driverUdid} the Driver app is not back on screen.");
+            Console.WriteLine("🚚 Driver phone unlocked, Driver app back on screen; nothing tapped in the app.");
+            string? afterUnlock = FindOwnDriverApp(search, "10082-NDT-1-P03 (after unlock)");
+
+            BaselineRecorder.Save("NDT-1-P03-ScreenLock", Node, new { before, lockedBy, listedWhileLocked = whileLocked != null, afterUnlock });
+            Assert.Multiple(() =>
+            {
+                Assert.That(whileLocked, Is.Null,
+                    $"With the screen timed out (locked) Flex still listed the Driver app as '{whileLocked}': it is discoverable " +
+                    "while not in the foreground (FEAT-NDT-1 covers the foreground only).");
+                Assert.That(afterUnlock, Is.Not.Null,
+                    "10082-NDT-1-P03 not met: after the driver unlocked the phone, Flex did not list the Driver app again " +
+                    "without the driver re-enabling discoverability.");
+            });
+        }
+
+        // The screen settings and wake locks that decide whether the screen times out, for the log
+        private static string ScreenAwakeHolders(string udid) =>
+            string.Join("; ", AdbHelper.Read(udid, "shell dumpsys power").Split('\n').Select(l => l.Trim()).Where(l =>
+                l.StartsWith("mScreenOffTimeoutSetting", StringComparison.Ordinal) ||
+                l.StartsWith("mStayOnWhilePluggedInSetting", StringComparison.Ordinal) ||
+                l.Contains("SCREEN_BRIGHT_WAKE_LOCK", StringComparison.Ordinal) || l.Contains("FULL_WAKE_LOCK", StringComparison.Ordinal)));
+
+        private static bool IsScreenOn(string udid) =>
+            AdbHelper.Read(udid, "shell dumpsys power").Contains("mWakefulness=Awake", StringComparison.Ordinal);
+
+        private static bool IsResumed(string udid, string package) =>
+            AdbHelper.Read(udid, "shell dumpsys activity activities").Split('\n')
+                .Any(l => l.Contains("topResumedActivity", StringComparison.Ordinal) && l.Contains(package, StringComparison.Ordinal));
+
+        private static bool WaitFor(Func<bool> condition, int timeoutSeconds)
+        {
+            var deadline = DateTime.Now.AddSeconds(timeoutSeconds);
+            while (DateTime.Now < deadline)
+            {
+                if (condition()) return true;
+                Thread.Sleep(1000);
+            }
+            return condition();
+        }
+
         // Control for the checks above: the same search by difference, with the Driver app started the way the transfer
         // tests start it (the POC's receive mode where a build still has it). A failure here means the search itself is
         // broken (Flex's scan, the Driver emulator's Bluetooth), not a missing NDT-1 behavior
