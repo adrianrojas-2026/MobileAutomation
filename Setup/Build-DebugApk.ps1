@@ -131,9 +131,18 @@ else {
             pnpm run web-build-dev
         }
         else {
-            pnpm run build
+            # Plain 'ng build' is the production config, which turns Nearby off (#10082 Story 4.1), so the Driver
+            # App would never advertise. QA is the config with Nearby on and Driver Session off, as the tests expect
+            # (dev turns Driver Session on, which puts Start Session in front of Scan QR Code)
+            pnpm run build --configuration=qa
         }
         if ($LASTEXITCODE -ne 0) { throw "$App web build failed." }
+        if ($App -eq "Driver") {
+            $bundle = Get-ChildItem (Join-Path $projectPath "www") -Filter "main*.js" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($bundle -and (Select-String -LiteralPath $bundle.FullName -Pattern 'featureFlags:\{[^}]*nearby:!1' -Quiet)) {
+                throw "The Driver web bundle has the Nearby feature flag off ($($bundle.Name)); the Nearby tests need it on."
+            }
+        }
 
         npx cap sync android
         if ($LASTEXITCODE -ne 0) { throw "Capacitor sync failed." }
