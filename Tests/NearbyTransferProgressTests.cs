@@ -61,6 +61,20 @@ namespace RecoveryTrac.AutomatedTests
             var inProgress = afterSelect.Where(s => s.Open && s.Progress != null).ToList();
             var transferring = inProgress.Where(s => TransferStates.Contains(s.Progress!.Text)).ToList();
             var cancelChecked = transferring.Count > 0 ? transferring : inProgress;
+            // Flex renders Cancel with the progress text in the same pass (*ngIf="busy"), but a new ion-button stays
+            // hidden until Ionic hydrates it, a frame or two; the in-page recording can catch that frame. So Cancel may
+            // be missing only within the first CancelRenderMs of the progress view, and every state must show it
+            const long CancelRenderMs = 300;
+            long firstProgressT = inProgress.FirstOrDefault()?.T ?? 0;
+            var withoutCancel = cancelChecked.Where(s => !s.HasButton(Cancel)).ToList();
+            var withoutCancelLater = withoutCancel.Where(s => s.T - firstProgressT > CancelRenderMs).ToList();
+            var statesWithoutCancel = cancelChecked.GroupBy(s => s.Progress!.Text)
+                .Where(g => !g.Any(s => s.HasButton(Cancel))).Select(g => g.Key).ToList();
+            if (withoutCancel.Count > 0)
+            {
+                Console.WriteLine($"📡 {withoutCancel.Count} of {cancelChecked.Count} in-progress snapshots without '{Cancel}', " +
+                                  $"{withoutCancel.Count - withoutCancelLater.Count} of them within {CancelRenderMs} ms of the progress view appearing.");
+            }
             var states = inProgress.Select(s => $"{s.Progress!.Text}{(s.Progress.Spinner ? " (spinner)" : string.Empty)}").Distinct().ToList();
             Console.WriteLine($"📡 After selecting '{card.Key}': [{string.Join(" > ", states)}], titles [{string.Join(", ", inProgress.Select(s => s.Title).Distinct())}]; " +
                               $"Flex scanning: {scanningAfterSelect}; Driver App load: '{load}'.");
@@ -97,9 +111,10 @@ namespace RecoveryTrac.AutomatedTests
                     $"10082-NDT-10-P04 not met: '{ConnectingText}' with a spinner was not shown while connecting (states: [{string.Join(" > ", states)}]).");
                 Assert.That(inProgress.Any(s => s.Progress!.Text == SendingDataText && s.Progress.Spinner), Is.True,
                     $"10082-NDT-10-P06 not met: '{SendingDataText}' with a spinner was not shown while sending (states: [{string.Join(" > ", states)}]).");
-                Assert.That(cancelChecked.Count > 0 && cancelChecked.All(s => s.HasButton(Cancel)), Is.True,
+                Assert.That(cancelChecked.Count > 0 && withoutCancelLater.Count == 0 && statesWithoutCancel.Count == 0, Is.True,
                     $"10082-NDT-10-P07 not met: '{Cancel}' is not offered throughout the in-progress states " +
-                    $"(first without it: {cancelChecked.FirstOrDefault(s => !s.HasButton(Cancel))}).");
+                    $"(states never showing it: [{string.Join(", ", statesWithoutCancel)}]; first without it after {CancelRenderMs} ms: " +
+                    $"{withoutCancelLater.FirstOrDefault()?.ToString() ?? "none"}).");
                 Assert.That(afterSelect.Any(s => s.Determinate), Is.False,
                     $"10082-NDT-10-N01 not met: Flex showed determinate progress (a progress bar, percentage or byte/packet count) ({afterSelect.FirstOrDefault(s => s.Determinate)}).");
             });
