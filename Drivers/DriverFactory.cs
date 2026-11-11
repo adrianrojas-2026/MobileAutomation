@@ -436,7 +436,9 @@ public static class DriverFactory
         string? udid = AdbHelper.GetUdid(driver);
         string? package = (driver.Capabilities.GetCapability("appPackage") ?? driver.Capabilities.GetCapability("appium:appPackage"))?.ToString();
         if (string.IsNullOrWhiteSpace(udid) || string.IsNullOrWhiteSpace(package)) return null;
-        if (AdbHelper.Read(udid, $"shell pidof {package}", 10000) != string.Empty) return null;
+        // Read returns "" when adb times out or fails too, so only a positive "gone" answer counts: a slow adb right
+        // after login otherwise made a live app look dead and stopped the caller's WebView retry
+        if (AdbHelper.Read(udid, $"shell \"pidof {package} || echo gone\"", 10000) != "gone") return null;
 
         // Native crashes name the process as ">>> package <<<", Java ones as "Process: package, PID"; ":remote" and other
         // side processes of the app don't match either
