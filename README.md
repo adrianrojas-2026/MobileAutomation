@@ -199,6 +199,7 @@ Not automated in R1-C2: the alternative-action requirements, which wait on an op
 | Path | Contents |
 |---|---|
 | `Tests/` | Test fixtures (`BaseTest` closes the apps and sessions after each test) |
+| `Tests/DualAppTestBase.cs` | Base of every two-app fixture: starts Flex and the Driver App on the test's node pair with that node's Flex account, saves failure evidence from both apps, records each test for the reports |
 | `Tests/ReportSetUpFixture.cs` | Runs once after all tests and writes the final reports and `Reports/index.html` |
 | `Pages/` | Flex page objects (`LoginPage`, `PrivacyPolicyPage`, `HomePage`, `FormsPage`, `ClockInPage`, `CollectionLoadTicketFormPage`, `LoadDisposalFormPage`, ...). `ClockInPage` handles the *Not Clocked In* alert and Clock In modal that Forms > New can raise |
 | `Pages/FlexApp/FlexAppPage.cs`, `Pages/Driver/DriverAppPage.cs`, `Pages/MenuPage.cs` | Early page objects that no test uses (`MenuPage.cs` is empty) |
@@ -217,6 +218,8 @@ Not automated in R1-C2: the alternative-action requirements, which wait on an op
 | `Utilities/FakeCameraFeed.cs` | Web: feeds an image (QR code) to the browser's fake camera |
 | `Utilities/QrScanFeed.cs` | Hands a QR code to an app's scanner (Web: fake camera; Mobile: see [How Mobile mode handles the camera](#how-mobile-mode-handles-the-camera)) |
 | `Utilities/AdbHelper.cs` | `adb` helpers: port forwarding and adding photos to the gallery |
+| `Utilities/IonicToasts.cs` | Reads Ionic toasts in Flex or the Driver App, recording each as it appears so a short-lived one isn't missed |
+| `Utilities/PermissionHelper.cs` | Answers Android's permission dialogs (camera, location "While using the app") and the 16 KB page-size warning on Android 16+ images |
 | `Setup/Start-MobileGrid.ps1` | Starts the six node emulators on their fixed ports, then checks each one's Android version and installed APK |
 | `Setup/Build-DebugApk.ps1` | Builds and installs the Flex / Driver debug APKs against the local backend; skips the build when the app's sources didn't change |
 | `Setup/Clear-EmulatorCache.ps1` | Frees disk space: Quick Boot snapshots and emulator temp files, optionally a factory reset (see [Freeing disk space](#freeing-disk-space)) |
@@ -349,7 +352,7 @@ Chrome (Flex) opens first. Edge (Driver App) opens once the collection QR code e
   Then, in each `%USERPROFILE%\.android\avd\<name>.avd\config.ini`, set `hw.camera.back=virtualscene`, `hw.gpu.mode=host` and `disk.dataPartition.size=10G`.
 - **Check:** `.\Setup\Start-MobileGrid.ps1` starts all six and shows each one's Android version. Until the apps are installed it reports them missing; `Run-Suite.ps1 -RebuildApks` installs them.
 
-Nodes 1 and 2 have passed full parallel runs in both Web and Mobile mode. Node 3 passed all 10 of its tests (E2E, its QR-B and QR-D fixtures, BLE TC-12/13 and QR-B10) on 2026-11-11 in about 44 minutes, Node 3 alone (`Run-Suite.ps1 -Nodes 3 -Filter "FullyQualifiedName~Node3|Category=BLE-Readiness"`). The NDT tests are fixed to Node 2 and can't run there.
+Nodes 1 and 2 have passed full parallel runs in both Web and Mobile mode. Node 3 passed all 10 of its tests at the time (E2E, its QR-B and QR-D fixtures, BLE TC-12/13 and QR-B10) on 2026-11-11 in about 44 minutes, Node 3 alone (`Run-Suite.ps1 -Nodes 3 -Filter "FullyQualifiedName~Node3|Category=BLE-Readiness"`). The same filter now also runs QR-R02, R05 and R06 (13 tests); those three passed the same day in a Node 2 + 3 run, R05 after a fix to how it reads the alert. The NDT tests are fixed to Node 2 and can't run there.
 
 - **Start the grid with the script.** It starts each emulator on its own port, so the serial always matches `appsettings.json`. (Started by hand, the serial depends on start order: the first emulator gets 5554.) It stops if a port is taken by the wrong AVD. Once the emulators have booted, it reports each serial's Android version and whether its APK is installed:
 
