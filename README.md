@@ -41,6 +41,31 @@ Each test case runs these steps:
 
 Generated QR codes are saved under `bin/Debug/net10.0/QrCodes/` (named with the node, e.g. `CollectionLoadTicket_Node2_<timestamp>.png`) and attached to the test result.
 
+Steps 1–2 come from `Flows/CollectionLoadTicketFlow.cs` and step 4 from `Flows/LoadDisposalFlow.cs`. The QR baselines below use the same flows.
+
+## QR baselines (QR-B / QR-D)
+
+These tests record how the QR handoff behaves **today**, so the BLE tests have an expected result to compare with (for example "the Driver App behaves as after a QR scan"). Each one saves what it observed as JSON under `bin/Debug/net10.0/Baselines/` and only fails on what must hold for QR too. Something worth knowing that isn't a failure (e.g. a damaged code that is accepted) appears as a *Finding* in the report. The scenarios are described in Part A of `docs/testing/test-scenarios-ble-ticket-handoff.md`.
+
+| Fixture | Scenarios | Covers | Category |
+|---|---|---|---|
+| `Tests/QrBaselineTests.cs` | QR-B01…B11 | Collection leg: collection QR → Driver App load (payload, load after restart, second ticket, re-scan, non-ticket and damaged codes, airplane mode, abandon prompt) | `QR-Baseline` |
+| `Tests/QrDisposalBaselineTests.cs` | QR-D01…D10 | Disposal leg, ahead of BLE load disposal: Driver load QR → Flex *Load - Disposal* import (BLE *Receive Data*), and disposal QR → Driver App receipt (BLE *Send Receipt*) | `QR-Baseline`, `QR-Baseline-Disposal` |
+
+The disposal scenarios:
+
+| ID | Records | Node |
+|---|---|---|
+| QR-D01 / D02 / D03 | The Driver's load QR payload and what the disposal form imports; the disposal QR payload; the disposal QR reopened from its card carries the same payload | Node 2 |
+| QR-D04 / D05 | The receipt after the scan; the receipt still listed after a restart, and whether the receipt ends the load | Node 3 |
+| QR-D06 | The same disposal QR scanned twice | Node 2 |
+| QR-D07 | The disposal form with a code that isn't a load, and with a load payload cut in half or with one character changed | Node 3 |
+| QR-D08 | *Scan Receipt Code* with a code that isn't a disposal ticket, and with damaged disposal payloads | Node 2 |
+| QR-D09 | A driver holding load A scans the disposal QR of load B (BLE: a receipt sent to the wrong Driver App) | Node 3 |
+| QR-D10 | Disposal and receipt with both devices in airplane mode | Node 2 |
+
+Each fixture runs on Node 2 and Node 3 in parallel, logged in with that node's own Flex account; tests on the same node pair run one after the other. QR-B06, B07, B09, D07, D08 and D10 need Mobile mode (they stage arbitrary QR text or use airplane mode) and are ignored in Web mode. Helpers shared by both fixtures (submitting a ticket, damaged payload variants) are in `Tests/QrBaselineTestBase.cs`.
+
 ## BLE ticket handoff (TC-12 / TC-13)
 
 `Tests/BleTicketHandoffTests.cs` → `BLE_TC12_TC13_CollectionTicket_SentViaBluetooth_IsLoadedOnDriver` (category `BLE`). This is Part B of `docs/testing/test-scenarios-ble-ticket-handoff.md`. The collection ticket goes from Flex to the Driver App **over Bluetooth instead of a QR scan**. The test runs only in Mobile mode; in Web mode it is skipped.
@@ -73,7 +98,7 @@ The two fixtures run **one after the other** (`[NonParallelizable]`): each test 
 
 Each run saves its measurements to `bin/Debug/net10.0/Baselines/BLE-TC12_<node>_<timestamp>.json`: ticket, the Driver App card, send result, `sentSeconds` / `loadedSeconds`, toast, payload length and both payload hashes.
 
-**Not covered yet:** the disposal side of the BLE handoff (still in development), so the test ends once the Driver App holds the load. The ×10 iteration run and the "≥ 9 of 10 under 5 s" sign-off from the test plan are also out of scope. Emulator timings are indicative only.
+**Not covered yet:** the disposal side of the BLE handoff (still in development), so the test ends once the Driver App holds the load. Its QR expected results are already recorded by the QR-D baselines (see [QR baselines](#qr-baselines-qr-b--qr-d)). The ×10 iteration run and the "≥ 9 of 10 under 5 s" sign-off from the test plan are also out of scope. Emulator timings are indicative only.
 
 **Shared Bluetooth:** all emulators share one simulated Bluetooth, so each Flex would also list the other node's Driver App, and the Driver App doesn't show the Identity Code Flex lists it by. So the test finds its own Driver App by difference: it stops every grid Driver App, notes what Flex lists, starts its own and takes the card that appears.
 
@@ -148,7 +173,8 @@ Not automated in R1-C2: the alternative-action requirements, which wait on an op
 | `Pages/NearbyDriverMenuPage.cs` | #10082 R1 Nearby menu (discovery, progress, Bluetooth Access flow), read by the required texts and recorded from inside the WebView |
 | `Tests/NearbyTestBase.cs` | Shared setup for the #10082 Nearby fixtures: stops the grid Driver Apps, opens the Nearby menu, finds this node's Driver App |
 | `Pages/Driver/` | Driver App page objects (`DriverOnboardingPage`, `DriverHomePage`, `DriverReceiptPage`). `DriverHomePage` also covers the current load, its QR and toasts (and the POC's Receive via Bluetooth / truck code, used only while that button exists) |
-| `Flows/` | Steps shared by tests: `CollectionLoadTicketFlow` (Flex login → submitted collection ticket), `DriverAppFlow` (Driver App onto Home, restart) |
+| `Flows/` | Steps shared by tests: `CollectionLoadTicketFlow` (Flex login → submitted collection ticket), `LoadDisposalFlow` (Flex disposal: import the Driver's load QR → submitted disposal ticket and its QR), `DriverAppFlow` (Driver App onto Home, restart) |
+| `Tests/QrBaselineTestBase.cs` | Shared by the QR-B and QR-D baseline fixtures: node pair, submitted collection ticket with its decoded QR, damaged payload variants |
 | `Utilities/NearbyDevicesPermission.cs` | Resets, answers and checks Android's *Nearby devices* (Bluetooth) permission |
 | `Utilities/BaselineRecorder.cs` | Saves a run's measurements as JSON under `Baselines/` |
 | `Utilities/NearbyR1Report.cs`, `RequirementsAttribute.cs`, `ReportIndex.cs` | Nearby R1 requirements report (from each test's `[Requirements(...)]`), and `Reports/index.html` linking all reports (see [Failure evidence and reports](#failure-evidence-and-reports)) |
@@ -403,6 +429,16 @@ dotnet test --filter "Name~E2E_Node3" --logger "console;verbosity=detailed"
 
 The cases run at the same time: `[Parallelizable(ParallelScope.Children)]`, up to `LevelOfParallelism(3)` in `Properties/AssemblyInfo.cs`, which is exactly three nodes. Raise it if you add a fourth node. Each case uses the node pair it names, not the shared node pool. A run takes about **4–5 minutes** per node, and the parallel run takes about as long as the slower node. Leave the emulators alone while it runs.
 
+**QR baselines** on Node 2 and Node 3 in parallel (`.\Setup\Start-MobileGrid.ps1 -Nodes 2,3`):
+
+```powershell
+dotnet test --filter "Category=QR-Baseline" --logger "console;verbosity=normal"            # QR-B and QR-D
+dotnet test --filter "Category=QR-Baseline-Disposal" --logger "console;verbosity=normal"   # QR-D only
+dotnet test --filter "Name~QR_D04_D05"                                                     # one scenario
+```
+
+The QR-B tests take about **12 minutes** per node. Each QR-D test submits a collection and a disposal ticket: QR-D01…D03 took about **3.5 minutes** on Node 2, and the other QR-D tests haven't been timed yet (QR-D09 submits two collection tickets, so it takes longer).
+
 **BLE handoff (TC-12 / TC-13)**, Node 2 then Node 3 (one after the other). Only those two node pairs need to be running (`.\Setup\Start-MobileGrid.ps1 -Nodes 2,3`):
 
 ```powershell
@@ -566,7 +602,7 @@ The local-Aspire pipeline runs nightly on weekdays and by hand (parameters: filt
   | Report | Covers | Written |
   |---|---|---|
   | `NearbyR1Report_latest.html` | Feature #10082 R1: every NDT requirement with its status (**Met**, **Not met**, **Pending**, **Not checked**, **Not run**), the tests that check it and the finding that named it; test results, baselines, devices, failure screenshots | After a run with tests marked `[Requirements(...)]` |
-  | `QrBaselineReport_latest.html` | BLE POC Part A: QR-A01, QR-B01…B11 and TC-12 / TC-13, their requirement checks, baselines, devices | After a run with any of those tests |
+  | `QrBaselineReport_latest.html` | BLE POC Part A: QR-A01, QR-B01…B11, the disposal baselines QR-D01…D10 and TC-12 / TC-13, their requirement checks, baselines, devices | After a run with any of those tests |
 
   The Nearby and QR reports each list only their own tests, and keep the latest result of each test across runs (`*_results.json` next to them), so running one category updates only its rows. To start from scratch, delete the `Reports` folder.
 - **A requirement's status in the Nearby report** comes from its tests' results: *Not met* when a result names it (`10082-NDT-2-P14 / N04 not met: …`), *Pending* when that happens in a `*-Pending` category, *Not checked* when a warning says so or the test failed before its checks (e.g. a device not responding), *Met* when the test ran and didn't report it. A new Nearby test needs `[Requirements("NDT-x-yyy", ...)]` with the IDs it checks; a control test gets `[Requirements]` with none.
