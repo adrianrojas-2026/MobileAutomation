@@ -333,7 +333,7 @@ Chrome (Flex) opens first. Edge (Driver App) opens once the collection QR code e
   Then, in each `%USERPROFILE%\.android\avd\<name>.avd\config.ini`, set `hw.camera.back=virtualscene`, `hw.gpu.mode=host` and `disk.dataPartition.size=10G`.
 - **Check:** `.\Setup\Start-MobileGrid.ps1` starts all six and shows each one's Android version. Until the apps are installed it reports them missing; `Run-Suite.ps1 -RebuildApks` installs them.
 
-Nodes 1 and 2 have passed full parallel runs in both Web and Mobile mode. Node 3 hasn't completed a run yet.
+Nodes 1 and 2 have passed full parallel runs in both Web and Mobile mode. Node 3 passed all 10 of its tests (E2E, its QR-B and QR-D fixtures, BLE TC-12/13 and QR-B10) on 2026-11-11 in about 44 minutes, Node 3 alone (`Run-Suite.ps1 -Nodes 3 -Filter "FullyQualifiedName~Node3|Category=BLE-Readiness"`). The NDT tests are fixed to Node 2 and can't run there.
 
 - **Start the grid with the script.** It starts each emulator on its own port, so the serial always matches `appsettings.json`. (Started by hand, the serial depends on start order: the first emulator gets 5554.) It stops if a port is taken by the wrong AVD. Once the emulators have booted, it reports each serial's Android version and whether its APK is installed:
 
