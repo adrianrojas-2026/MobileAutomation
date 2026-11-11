@@ -118,6 +118,23 @@ The next Flex and Driver App versions add the disposal leg over BLE (R2): **Rece
 
 Run: `dotnet test --filter Category=QR-Baseline-Disposal`. QR-D07, D08 and D10 need `RunMode=Mobile`. Node durations are estimated, not measured yet; rebalance the Node2/Node3 split after the first run.
 
+### Part A3 - Receipt regression (getting a receipt over QR)
+
+Part A2 records the disposal leg. These scenarios **assert** that getting a receipt on the Driver App keeps working as it does today, so they fail when a Flex or Driver App change breaks it. They also give the BLE disposal E2E its expected result: once R2 *Send Receipt* exists, the BLE test (a copy of the QR-A01 E2E with the collection, *Receive Data* and *Send Receipt* over Bluetooth) checks its receipt against QR-R01's, field for field. Automated in `Tests/QrReceiptRegressionTests.cs` (categories `QR`, `QR-Receipt`), in the same QR baseline report.
+
+Expected texts are the Driver App's on `feature/10082-nearby-r1` (`qr-code/receipt/receipt-qr.service.ts`, `pages/scanner/scanner.page.ts`). In that build a receipt is stored on the phone only (SQLite, no backend sync), is numbered `<load>.A`, and always ends the active load. There is no check that the receipt matches the active load; UI branch `feature/10722` adds one (see QR-D09).
+
+| ID | Scenario | Steps | Asserts | Covers | Node |
+|---|---|---|---|---|---|
+| **QR-R01** | **Receipt from Home** | S2 → S4 → disposal → *Scan Receipt Code* → Back | Toast *Receipt saved successfully.*; route `/single-receipt/<id>` = header number, of the load; date = device time of the scan; Receipt Identifier / Truck / Debris / Capacity / Load Call 50; Back → Home with **No Active Load** and *Scan QR Code*. Saves every field as the expected receipt. | Get Receipt, Send Receipt | Node2 |
+| **QR-R02** | **Receipts tab** | Count today's receipts → R01 → restart → Receipts tab → search by number → search with no match → Clear Filters → open the card → Back | Count +1; card number and date; search finds it (and only matching numbers); *No receipts found for &lt;today&gt;.* with the search hint; Clear Filters restores the count; reopened receipt has the same number, date and fields; Back → `/receipts` | Get Receipt (stored, listed) | Node3 |
+| **QR-R03** | **Duplicate receipt** | Tickets A, B → Driver: A → disposal A → receipt A → Driver: B → disposal A's QR at *Scan Receipt Code* | No receipt opens; toast *Receipt &lt;A's receipt&gt; has already been scanned.*; back on Home with load B current; receipt A listed once | Send Receipt re-send | Node2 |
+| **QR-R04** | **Wrong kind of code** | S2 → S4 → the collection QR at *Scan Receipt Code* | No receipt; toast *QR Code Type Mismatch: Please scan a receipt QR code.*; back on Home, load unchanged, *Scan Receipt Code* still offered | Send Receipt of a non-receipt | Node2 |
+| **QR-R05** | **Collection QR after its receipt** | R01 → the same collection QR with *Scan QR Code* | Alert *Possible Duplicate Load* (*Receipts are already saved for this load.*); no current load afterwards | Send Data after Send Receipt | Node3 |
+| **QR-R06** | **Receipt from the Receipts tab** | S2 → S4 → disposal → Receipts tab → header QR icon | Same receipt checks as QR-R01 | Get Receipt | Node3 |
+
+Run: `dotnet test --filter Category=QR-Receipt`. QR-R02 needs `RunMode=Mobile` (it restarts the Driver App). Not timed yet.
+
 ---
 
 ## Part B - BLE handoff (ready when the feature lands)

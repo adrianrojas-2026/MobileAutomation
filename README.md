@@ -81,6 +81,21 @@ The disposal scenarios:
 
 Each QR-B and QR-D fixture runs on Node 2 and Node 3 in parallel, logged in with that node's own Flex account; tests on the same node pair run one after the other. QR-B06, B07, B09, D07, D08 and D10 need Mobile mode (they stage arbitrary QR text or use airplane mode) and are ignored in Web mode. Helpers shared by both fixtures (submitting a ticket, damaged payload variants) are in `Tests/QrBaselineTestBase.cs`.
 
+## Receipt regression (QR-R)
+
+`Tests/QrReceiptRegressionTests.cs` (categories `QR`, `QR-Receipt`) checks that **getting a receipt on the Driver App over QR** keeps working as it does today. QR-D *records* the disposal leg; these tests *assert* it, so a Flex or Driver App change that breaks the receipt fails the run. Each test also saves what it saw under `Baselines/`. QR-R01's receipt, with every field, is the expected result for the BLE disposal E2E (R2 *Send Receipt*, not built yet): a receipt sent over Bluetooth must match it field for field.
+
+| ID | Checks | Node |
+|---|---|---|
+| QR-R01 | Receipt from Home's *Scan Receipt Code*:<br>• the toast *Receipt saved successfully.*<br>• the receipt opens under the load's number (`<load>.A`), dated now (device clock)<br>• Receipt Identifier, Truck Number, Debris Type, Capacity and Load Call match the tickets<br>• *Back* returns to Home, which shows **No Active Load** and *Scan QR Code* | Node 2 |
+| QR-R02 | Receipts tab after a restart:<br>• today's count is one higher and the card shows the receipt's number and date<br>• *Search by number* finds it<br>• a search with no match shows *No receipts found for &lt;today&gt;.* and *Clear Filters* brings the list back<br>• the card reopens the same receipt (same fields), and *Back* returns to the list | Node 3 |
+| QR-R03 | The same disposal QR scanned again for the driver's next load:<br>• no receipt opens<br>• *Receipt &lt;id&gt; has already been scanned.*<br>• the app goes back to Home, the next load stays current<br>• the receipt is listed once | Node 2 |
+| QR-R04 | A collection QR at *Scan Receipt Code*:<br>• *QR Code Type Mismatch: Please scan a receipt QR code.*<br>• the app goes back to Home, the load stays current, and *Scan Receipt Code* is still offered | Node 2 |
+| QR-R05 | The collection QR of a load that already has its receipt, scanned again with *Scan QR Code*:<br>• the *Possible Duplicate Load* alert (*Receipts are already saved for this load.*)<br>• the load doesn't become current again | Node 3 |
+| QR-R06 | Receipt from the Receipts tab's QR icon while a load is active: the same checks as QR-R01's receipt | Node 3 |
+
+The expected texts come from the Driver App on `feature/10082-nearby-r1`. A build with the receipt / active-load validation (UI branch `feature/10722`) rejects a receipt for another load before checking for a duplicate, so QR-R03's message would change there. QR-R02 restarts the Driver App, so it needs Mobile mode. The receipt is read from the app's own page objects, `Pages/Driver/DriverReceiptPage.cs` (one receipt) and `Pages/Driver/DriverReceiptsPage.cs` (the Receipts tab).
+
 ## BLE ticket handoff (TC-12 / TC-13)
 
 `Tests/BleTicketHandoffTests.cs` → `BLE_TC12_TC13_CollectionTicket_SentViaBluetooth_IsLoadedOnDriver` (category `BLE`). This is Part B of `docs/testing/test-scenarios-ble-ticket-handoff.md`. The collection ticket goes from Flex to the Driver App **over Bluetooth instead of a QR scan**. The test runs only in Mobile mode; in Web mode it is skipped.
@@ -191,11 +206,12 @@ Not automated in R1-C2: the alternative-action requirements, which wait on an op
 | `Tests/NearbyTestBase.cs` | Shared setup for the #10082 Nearby fixtures: stops the grid Driver Apps, opens the Nearby menu, finds this node's Driver App |
 | `Pages/Driver/` | Driver App page objects (`DriverOnboardingPage`, `DriverHomePage`, `DriverReceiptPage`). `DriverHomePage` also covers the current load, its QR and toasts (and the POC's Receive via Bluetooth / truck code, used only while that button exists) |
 | `Flows/` | Steps shared by tests: `CollectionLoadTicketFlow` (Flex login → submitted collection ticket), `LoadDisposalFlow` (Flex disposal: import the Driver's load QR → submitted disposal ticket and its QR), `DriverAppFlow` (Driver App onto Home, restart) |
-| `Tests/QrBaselineTestBase.cs` | Shared by the QR-B and QR-D baseline fixtures: node pair, submitted collection ticket with its decoded QR, damaged payload variants |
+| `Tests/QrBaselineTestBase.cs` | Shared by the QR-B, QR-D and QR-R fixtures: node pair, submitted collection ticket with its decoded QR, the load on the Driver App and its submitted disposal, damaged payload variants |
+| `Pages/Driver/DriverReceiptPage.cs`, `DriverReceiptsPage.cs` | One receipt (number, date, every field, Back) and the Receipts tab (count, cards, search, empty state, scan icon) |
 | `Utilities/NearbyDevicesPermission.cs` | Resets, answers and checks Android's *Nearby devices* (Bluetooth) permission |
 | `Utilities/BluetoothHelper.cs` | A device's Bluetooth readiness (Android version, BLE hardware, adapter, app permissions), airplane mode and Bluetooth on/off through adb, and whether Flex is scanning (`IsScanning`) |
 | `Utilities/BaselineRecorder.cs` | Saves a run's measurements as JSON under `Baselines/` |
-| `Utilities/QrBaselineReport.cs` | QR baseline report: QR-B, QR-D, QR-B10 readiness and TC-12 / TC-13 results, their baselines and devices |
+| `Utilities/QrBaselineReport.cs` | QR baseline report: QR-B, QR-D, QR-R, QR-B10 readiness and TC-12 / TC-13 results, their baselines and devices |
 | `Utilities/NearbyR1Report.cs`, `RequirementsAttribute.cs`, `ReportIndex.cs` | Nearby R1 requirements report (from each test's `[Requirements(...)]`), and `Reports/index.html` linking all reports (see [Failure evidence and reports](#failure-evidence-and-reports)) |
 | `Drivers/DriverFactory.cs` | Starts the browsers (Web) or the Appium sessions (Mobile); forwards backend ports to the emulators |
 | `Utilities/FakeCameraFeed.cs` | Web: feeds an image (QR code) to the browser's fake camera |
@@ -457,7 +473,17 @@ dotnet test --filter "Name~QR_D04_D05"                                          
 dotnet test --filter "Category=BLE-Readiness"                                              # QR-B10: adb only, every online device
 ```
 
-`Category=QR-Baseline` doesn't include QR-B10; run it with `Category=BLE-Readiness`. `Category=QR` runs the E2E and both QR baseline fixtures.
+`Category=QR-Baseline` doesn't include QR-B10; run it with `Category=BLE-Readiness`. `Category=QR` runs the E2E, both QR baseline fixtures and the receipt regression tests.
+
+**Receipt regression (QR-R)** on Node 2 and Node 3 in parallel:
+
+```powershell
+.\Setup\Run-Suite.ps1 -Filter "Category=QR-Receipt"                    # QR-R01…R06
+dotnet test --filter "Category=QR-Receipt" --logger "console;verbosity=normal"
+dotnet test --filter "Name~QR_R03"                                      # one scenario
+```
+
+Each QR-R test submits a collection and a disposal ticket, except QR-R03 (two collections, one disposal) and QR-R04 (a collection only). They haven't been timed yet.
 
 The QR-B tests take about **12 minutes** per node. Each QR-D test submits a collection and a disposal ticket: QR-D01…D03 took about **3.5 minutes** on Node 2, and the other QR-D tests haven't been timed yet (QR-D09 submits two collection tickets, so it takes longer).
 
@@ -624,7 +650,7 @@ The local-Aspire pipeline runs nightly on weekdays and by hand (parameters: filt
   | Report | Covers | Written |
   |---|---|---|
   | `NearbyR1Report_latest.html` | Feature #10082 R1: every NDT requirement with its status (**Met**, **Not met**, **Pending**, **Not checked**, **Not run**), the tests that check it and the finding that named it; test results, baselines, devices, failure screenshots | After a run with tests marked `[Requirements(...)]` |
-  | `QrBaselineReport_latest.html` | BLE POC Part A: QR-A01, QR-B01…B11, the disposal baselines QR-D01…D10 and TC-12 / TC-13, their requirement checks, baselines, devices | After a run with any of those tests |
+  | `QrBaselineReport_latest.html` | BLE POC Part A: QR-A01, QR-B01…B11, the disposal baselines QR-D01…D10, the receipt regression tests QR-R01…R06 and TC-12 / TC-13, their requirement checks, baselines, devices | After a run with any of those tests |
 
   The Nearby and QR reports each list only their own tests, and keep the latest result of each test across runs (`*_results.json` next to them), so running one category updates only its rows. To start from scratch, delete the `Reports` folder.
 - **A requirement's status in the Nearby report** comes from its tests' results: *Not met* when a result names it (`10082-NDT-2-P14 / N04 not met: …`), *Pending* when that happens in a `*-Pending` category, *Not checked* when a warning says so or the test failed before its checks (e.g. a device not responding), *Met* when the test ran and didn't report it. A new Nearby test needs `[Requirements("NDT-x-yyy", ...)]` with the IDs it checks; a control test gets `[Requirements]` with none.
