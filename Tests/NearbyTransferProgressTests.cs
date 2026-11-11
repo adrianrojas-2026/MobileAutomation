@@ -16,10 +16,11 @@ namespace RecoveryTrac.AutomatedTests
     // A transfer between emulators takes about a second, so the menu is recorded from inside the WebView and checked
     // afterwards rather than polled. Each failure names its requirement ID.
     // Story 4.8 (NDT-10 progress view and Cancel) is in the Flex code as of 2026-11-10: a successful send closes the
-    // menu with the LDT-10 toast 'Data sent to …', a canceled one closes it with no toast. Kept in "BLE-R1-C2-Pending"
-    // until both pass against that build; then move it back to "BLE-R1-C2"
+    // menu with the LDT-10 toast 'Data sent to …', a canceled one closes it with no toast. Both tests passed against
+    // that build (Select 2026-11-10, Cancel 2026-11-11 with Cancel timed on 'Connecting…'), so they left
+    // "BLE-R1-C2-Pending" for "BLE-R1-C2". An APK built before 4.8 fails them with NDT-10 not met
     [TestFixture]
-    [Category("BLE-R1-C2-Pending")]
+    [Category("BLE-R1-C2")]
     [NonParallelizable]
     public class NearbyTransferProgressTests : NearbyTestBase
     {
