@@ -158,10 +158,16 @@ public class LoadDisposalFlow
         return new SubmittedDisposal(ticketId, qrPng!, qrPromptedOnSubmit, card);
     }
 
-    // The QR modal of a submitted disposal ticket, opened from its card (next to Print)
+    // The QR modal of a submitted disposal ticket, opened from its card (next to Print). A ticket that has not synced
+    // yet (e.g. submitted offline) is still modifiable, so the app first asks to finalize it (Generate QR Code)
     public byte[] OpenCardQr(string ticketId)
     {
         Forms.OpenSubmittedCardQr(ticketId);
+        if (Form.IsGenerateQrPromptShown(timeoutSeconds: 5))
+        {
+            Console.WriteLine($"ℹ️ Ticket {ticketId} is not finalized yet; confirming Generate QR Code from its card.");
+            Form.ProceedWithQrGeneration();
+        }
         byte[] qrPng = Form.GetQrCodePng();
         Form.CloseQrModal();
         return qrPng;
