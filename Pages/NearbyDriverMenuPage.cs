@@ -279,26 +279,37 @@ public class NearbyDriverMenuPage : BasePage
         Run("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));");
     }
 
-    // Selects the card, then tries a passive dismissal (backdrop tap + Escape) after dismissAfterMs and taps Cancel
-    // after cancelAfterMs, all timed inside the WebView: a transfer between emulators takes about a second, too short
-    // to aim at with separate WebDriver round trips. Each step is marked in the recording ('cancel-missing' when no
-    // Cancel was shown). False when the card is not listed
-    public bool SelectThenDismissAndCancel(string key, int dismissAfterMs, int cancelAfterMs) => Run("""
-        const [key, dismissAfter, cancelAfter] = arguments;
+    // Selects the card and, as soon as the transfer shows as in progress (Cancel offered, i.e. while Flex is still
+    // connecting), tries a passive dismissal (backdrop tap + Escape) and taps Cancel cancelGapMs later. Flex only
+    // disconnects and drops the transfer when Cancel lands before the last data frame is written (ble-send-run.ts);
+    // a fixed delay after selecting (500 ms) sometimes landed on 'Sending data…', when the Driver App commits and
+    // success wins. Timed inside the WebView, polled every 20 ms: a transfer between emulators takes about a second,
+    // too short to aim at with separate WebDriver round trips. Marks 'in-progress', 'tap-outside', 'escape' and 'cancel' (or
+    // 'cancel-missing' when no Cancel was offered within timeoutMs). False when the card is not listed
+    public bool SelectThenDismissAndCancelWhileConnecting(string key, int cancelGapMs = 80, int timeoutMs = 5000) => Run("""
+        const [key, cancelGap, timeout] = arguments;
         const card = n.cards().find(c => n.keyOf(c) === key);
         if (!card) return false;
         const mark = what => n.rec && n.rec.marks.push({ what, t: Date.now() });
         mark('select');
+        const started = Date.now();
         card.click();
-        setTimeout(() => {
-          mark('tap-outside'); n.tapOutside();
-          mark('escape'); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-        }, dismissAfter);
-        setTimeout(() => {
-          const b = n.button('Cancel');
-          mark(b ? 'cancel' : 'cancel-missing');
-          if (b) b.click();
-        }, cancelAfter);
+        const poll = setInterval(() => {
+          if (n.button('Cancel')) {
+            clearInterval(poll);
+            mark('in-progress');
+            mark('tap-outside'); n.tapOutside();
+            mark('escape'); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            setTimeout(() => {
+              const b = n.button('Cancel');
+              mark(b ? 'cancel' : 'cancel-missing');
+              if (b) b.click();
+            }, cancelGap);
+          } else if (Date.now() - started > timeout) {
+            clearInterval(poll);
+            mark('cancel-missing');
+          }
+        }, 20);
         return true;
-        """, key, dismissAfterMs, cancelAfterMs) is true;
+        """, key, cancelGapMs, timeoutMs) is true;
 }
