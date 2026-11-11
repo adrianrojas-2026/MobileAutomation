@@ -21,7 +21,7 @@ Status values: ✅ automated today · 🟢 ready to automate now · 🟡 automat
 
 ## Part A implementation status (2026-10-27, branch `feature/qr-baseline-ble-prep`)
 
-**Final result (Node3, Flex A17 / Driver A16): 7 passed, 2 warnings (findings), 0 failed.** HTML report: `bin/Debug/net10.0/Reports/QrBaselineReport_latest.html`, written after every run. It keeps the latest result of each test, so re-running one test still gives a full report.
+**Final result (Node3, Flex A17 / Driver A16): 7 passed, 2 warnings (findings), 0 failed.** HTML report: `TestResults/Reports/QrBaselineReport_latest.html` (linked from `TestResults/Reports/index.html`), written after every run. It keeps the latest result of each test, so re-running one test still gives a full report.
 
 | Scenario | Result | Recorded baseline (expected result for the BLE test) |
 |---|---|---|
