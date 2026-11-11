@@ -106,6 +106,11 @@ public class DriverHomePage : BasePage
         wait.Until(d => new Uri(d.Url).AbsolutePath.TrimStart('/').StartsWith(tab, StringComparison.OrdinalIgnoreCase));
     }
 
+    // Whether the open tab shows the text anywhere, e.g. a receipt identifier on the Receipts tab. Visible matches only:
+    // Ionic keeps hidden copies of cached pages
+    public bool IsTextShown(string text, int timeoutSeconds = 15) =>
+        FindVisible(By.XPath($"//*[contains(normalize-space(text()), '{text}')]"), timeoutSeconds) != null;
+
     private By TruckCode => By.CssSelector("app-home .receive-panel__id");
     private By ReceiveStatus => By.CssSelector("app-home .receive-panel__status");
 

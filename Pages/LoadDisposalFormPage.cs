@@ -58,4 +58,24 @@ public class LoadDisposalFormPage : CollectionLoadTicketFormPage
     }
 
     public string SelectFirstDisposalSite() => SelectFirstChoiceOption("Disposal Site");
+
+    // Imported Truck Number, or empty while the step shows no such field (nothing imported yet)
+    public string ImportedTruckNumber => HasField("Truck Number") ? GetFieldValue("Truck Number") : string.Empty;
+
+    // Text of an alert Flex shows after a scan (e.g. an invalid code), closed with its cancel button when it has one,
+    // otherwise its last button, so the form stays as the scan left it. Null when no alert shows up
+    public string? CaptureAndCloseAlert(int timeoutSeconds = 5)
+    {
+        var alert = FindVisible(By.CssSelector("ion-alert"), timeoutSeconds);
+        if (alert == null) return null;
+
+        string text = string.Join(" ", alert.FindElements(By.CssSelector(".alert-head, .alert-message"))
+            .Select(e => e.Text.Trim()).Where(t => t.Length > 0));
+        var buttons = alert.FindElements(By.CssSelector("button.alert-button")).Where(b => b.Displayed).ToList();
+        var close = buttons.FirstOrDefault(b => (b.GetAttribute("class") ?? "").Contains("alert-button-role-cancel"))
+                    ?? buttons.LastOrDefault();
+        Console.WriteLine($"🔔 Flex alert after the scan: '{text}', closing with '{close?.Text.Trim()}'.");
+        if (close != null) ((IJavaScriptExecutor)Driver).ExecuteScript("arguments[0].click();", close);
+        return text;
+    }
 }

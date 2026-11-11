@@ -21,7 +21,7 @@ Status values: ✅ automated today · 🟢 ready to automate now · 🟡 automat
 
 ## Part A implementation status (2026-10-27, branch `feature/qr-baseline-ble-prep`)
 
-**Final result (Node3, Flex A17 / Driver A16): 7 passed, 2 warnings (findings), 0 failed.** HTML report: `bin/Debug/net10.0/Reports/QrBaselineReport_latest.html`, written after every run. It keeps the latest result of each test, so re-running one test still gives a full report.
+**Final result (Node3, Flex A17 / Driver A16): 7 passed, 2 warnings (findings), 0 failed.** HTML report: `TestResults/Reports/QrBaselineReport_latest.html` (linked from `TestResults/Reports/index.html`), written after every run. It keeps the latest result of each test, so re-running one test still gives a full report.
 
 | Scenario | Result | Recorded baseline (expected result for the BLE test) |
 |---|---|---|
@@ -98,6 +98,25 @@ Scenarios refer to these step blocks instead of repeating them. **R** = reuses e
 | **QR-B09** | QR flow with **both devices in airplane mode** (after login) | S1 → S7 airplane on (both) → S2 → S4 → S7 airplane off | Driver gets the load offline. Ticket under Submitted, **Synced only after airplane mode is off**. | Demo env, TC-29 | 🟡 S7 |
 | **QR-B10** | **Device Bluetooth readiness probe** (Day-1 spike) | S7 on each grid device / demo phone | Log Android version, `bluetooth_le` feature, BT on/off, Flex/Driver BT permissions. *(2026-10-27: Node3 A16/A17 emulators report `bluetooth_le=true`, BT on. Driver 1.2.0 requests no BT permissions; Flex 4.10.2 requests SCAN/CONNECT, not granted on Node3 Flex.)* | Risk 1, lane E/D | 🟢 |
 | **QR-B11** | Zebra print of a collection ticket | Manual: print from Flex | Prints. Record the steps as the baseline for TC-28. | Check 5 | ✋ |
+
+### Part A2 - Disposal QR baseline (ahead of BLE load disposal)
+
+The next Flex and Driver App versions add the disposal leg over BLE (R2): **Receive Data** (the Driver's load goes to the Flex *Load - Disposal* form, today the driver's load QR) and **Send Receipt** (the disposal goes back to the Driver App as its receipt, today the disposal QR). These scenarios record how both QR hops behave today, as the expected results for those BLE tests. They are automated in `Tests/QrDisposalBaselineTests.cs` (categories `QR-Baseline` and `QR-Baseline-Disposal`) and appear in the same QR baseline report. Flex steps 23–26 now live in `Flows/LoadDisposalFlow.cs`, which the QR-A01 E2E also uses.
+
+| ID | Scenario | Steps | Expected / recorded | Covers | Node |
+|---|---|---|---|---|---|
+| **QR-D01** | **Driver load QR payload**, imported by the disposal form | S2 → S4 → decode the load QR → disposal *Import Collection Data* | Payload, length, SHA-256, and whether it equals the collection QR payload. Imported Truck Number. Asserts: not empty, ≤ 4,200 chars, Truck Number imported. | FR-4, Receive Data | Node2 |
+| **QR-D02** | **Disposal QR payload** | QR-D01 → load call → Submit → disposal QR | Payload, length, SHA-256, prompted on submit or opened from the card, card values. Asserts: not empty, ≤ 4,200 chars. | FR-4, Send Receipt | Node2 |
+| **QR-D03** | Disposal QR reopened from the submitted card | QR-D02 → `OpenSubmittedCardQr` | Asserts it decodes to the QR-D02 payload (QR fallback after a failed send) | FR-7 | Node2 |
+| **QR-D04** | **Driver receipt** after the disposal QR scan | S2 → S4 → disposal → *Scan Receipt Code* | Receipt snapshot. Asserts: receipt of the collection ticket, Truck / Debris / Capacity / Load Call 50 | FR-6, Send Receipt | Node3 |
+| **QR-D05** | Receipt stored after a restart | QR-D04 → restart Driver → Receipts tab | Asserts the receipt is listed. Records whether the receipt **ended the load** and which Home actions are offered. | FR-6 | Node3 |
+| **QR-D06** | Same disposal QR scanned twice | QR-D04 → restart → scan the same disposal QR with what Home offers | Records: same receipt again / new receipt / alert / ignored. Asserts it does not become a load. | Send Receipt re-send | Node2 |
+| **QR-D07** | Disposal import of a **non-load / damaged** load QR | S2 → S4 → disposal form → stage text, truncated-half and one-char-altered load payloads → then the real load QR → Submit | Per variant: alert, toast, NEXT enabled, Truck Number, Disposal Site. Asserts the non-load text is not imported. A damaged payload that is imported is reported as a finding, not a failure (as QR-B07). | FR-5, Check 3, Receive Data | Node3 |
+| **QR-D08** | Receipt scan of a **non-receipt / damaged** disposal QR | QR-D04 setup → stage text / damaged disposal payloads at *Scan Receipt Code*, restarting after each → then the real disposal QR | Per variant: alert, receipt, load after restart. Asserts: no receipt for non-receipt text, and the real disposal QR still gives the receipt. Damaged payloads that give a receipt are reported as findings. | FR-5, Check 3, Send Receipt | Node2 |
+| **QR-D09** | Disposal QR of **another load** | Tickets A and B → Driver scans B (load QR kept), then A → disposal of B → Driver (load A) scans it | Records whether B's receipt is accepted while A is active. Asserts it never becomes a receipt of A. | Send Receipt to the wrong Driver App | Node3 |
+| **QR-D10** | Disposal and receipt in **airplane mode** | S2 → S4 online → S7 airplane on (both) → disposal → receipt → airplane off | Asserts: receipt received offline, and the disposal ticket syncs once back online | Demo env | Node2 |
+
+Run: `dotnet test --filter Category=QR-Baseline-Disposal`. QR-D07, D08 and D10 need `RunMode=Mobile`. Node durations are estimated, not measured yet; rebalance the Node2/Node3 split after the first run.
 
 ---
 

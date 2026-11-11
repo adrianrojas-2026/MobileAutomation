@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using MobileAutomation.Tests.Drivers;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Appium.Android;
 using ZXing;
@@ -101,8 +104,15 @@ public static class QrScanFeed
     private static readonly (int Width, int Height)[] DecodeFrames =
         [(1200, 1200), (1600, 1600), (FakeCameraFeed.Width, FakeCameraFeed.Height)];
 
+    // Decoded text by PNG hash, so staging a code again (e.g. QR-D06's rescan) needs no rasterizer: the Flex session
+    // used for it may be gone by then (its WebView can crash while the test is busy on the Driver app)
+    private static readonly ConcurrentDictionary<string, string> DecodedTexts = new();
+
     // Text encoded in a QR code image
-    public static string Decode(byte[] qrPng, IWebDriver rasterizer)
+    public static string Decode(byte[] qrPng, IWebDriver rasterizer) =>
+        DecodedTexts.GetOrAdd(Convert.ToHexString(SHA256.HashData(qrPng)), _ => DecodeUncached(qrPng, rasterizer));
+
+    private static string DecodeUncached(byte[] qrPng, IWebDriver rasterizer)
     {
         var reader = new BarcodeReaderGeneric
         {
@@ -116,7 +126,7 @@ public static class QrScanFeed
         };
         foreach (var (width, height) in DecodeFrames)
         {
-            byte[] luma = FakeCameraFeed.RasterizeLuma(qrPng, rasterizer, width, height);
+            byte[] luma = RasterizeOrExplain(qrPng, rasterizer, width, height);
             var source = new PlanarYUVLuminanceSource(luma, width, height, 0, 0, width, height, false);
             string? text = reader.Decode(source)?.Text ?? pureReader.Decode(source)?.Text;
             if (text != null)
@@ -125,5 +135,19 @@ public static class QrScanFeed
             }
         }
         throw new InvalidOperationException("No QR code could be read from the staged image.");
+    }
+
+    // A rasterizer whose app has died only reports a lost DevTools connection; say which app died and why instead
+    private static byte[] RasterizeOrExplain(byte[] qrPng, IWebDriver rasterizer, int width, int height)
+    {
+        try
+        {
+            return FakeCameraFeed.RasterizeLuma(qrPng, rasterizer, width, height);
+        }
+        catch (WebDriverException ex) when (rasterizer is AndroidDriver android
+                                            && DriverFactory.AppNotRunningReason(android) is { } reason)
+        {
+            throw new InvalidOperationException($"Could not decode the QR code: the rasterizer app is gone. {reason}", ex);
+        }
     }
 }
