@@ -258,6 +258,8 @@ namespace RecoveryTrac.AutomatedTests
             Thread.Sleep(2000);
             string loadAfter = home.CurrentLoad;
             bool hasLoadAfter = home.HasActiveLoad;
+            // The alert's head holds its title and its sub-title ("Load <n>") on separate lines
+            var head = (alert?.Header ?? string.Empty).Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
             BaselineRecorder.Save("QR-R05", _node, new
             {
@@ -271,8 +273,10 @@ namespace RecoveryTrac.AutomatedTests
             Assert.Multiple(() =>
             {
                 Assert.That(IsReceiptOf(receipt.Id, load.Load), Is.True, $"Receipt {receipt.Id} does not belong to load {load.Load}.");
-                Assert.That(alert?.Header, Is.EqualTo(DuplicateLoadHeader),
+                Assert.That(head.FirstOrDefault(), Is.EqualTo(DuplicateLoadHeader),
                     $"Scanning ticket {load.Ticket.TicketId}'s collection QR after its receipt did not warn of a possible duplicate load.");
+                Assert.That(head.Skip(1).FirstOrDefault(), Is.EqualTo($"Load {load.Load}"),
+                    $"The possible duplicate load alert doesn't name load {load.Load}.");
                 Assert.That(alert?.Message, Does.Contain(DuplicateLoadMessage),
                     "The possible duplicate load alert doesn't say the load already has receipts.");
                 Assert.That(hasLoadAfter, Is.False, $"Load {load.Load} became the current load again ('{loadAfter}') after its receipt.");

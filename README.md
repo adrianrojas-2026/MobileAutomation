@@ -91,7 +91,7 @@ Each QR-B and QR-D fixture runs on Node 2 and Node 3 in parallel, logged in with
 | QR-R02 | Receipts tab after a restart:<br>• today's count is one higher and the card shows the receipt's number and date<br>• *Search by number* finds it<br>• a search with no match shows *No receipts found for &lt;today&gt;.* and *Clear Filters* brings the list back<br>• the card reopens the same receipt (same fields), and *Back* returns to the list | Node 3 |
 | QR-R03 | The same disposal QR scanned again for the driver's next load:<br>• no receipt opens<br>• *Receipt &lt;id&gt; has already been scanned.*<br>• the app goes back to Home, the next load stays current<br>• the receipt is listed once | Node 2 |
 | QR-R04 | A collection QR at *Scan Receipt Code*:<br>• *QR Code Type Mismatch: Please scan a receipt QR code.*<br>• the app goes back to Home, the load stays current, and *Scan Receipt Code* is still offered | Node 2 |
-| QR-R05 | The collection QR of a load that already has its receipt, scanned again with *Scan QR Code*:<br>• the *Possible Duplicate Load* alert (*Receipts are already saved for this load.*)<br>• the load doesn't become current again | Node 3 |
+| QR-R05 | The collection QR of a load that already has its receipt, scanned again with *Scan QR Code*:<br>• the *Possible Duplicate Load* alert, sub-titled *Load &lt;n&gt;* (*Receipts are already saved for this load.*)<br>• the load doesn't become current again | Node 3 |
 | QR-R06 | Receipt from the Receipts tab's QR icon while a load is active: the same checks as QR-R01's receipt | Node 3 |
 
 The expected texts come from the Driver App on `feature/10082-nearby-r1`. A build with the receipt / active-load validation (UI branch `feature/10722`) rejects a receipt for another load before checking for a duplicate, so QR-R03's message would change there. QR-R02 restarts the Driver App, so it needs Mobile mode. The receipt is read from the app's own page objects, `Pages/Driver/DriverReceiptPage.cs` (one receipt) and `Pages/Driver/DriverReceiptsPage.cs` (the Receipts tab).
@@ -483,7 +483,7 @@ dotnet test --filter "Category=QR-Receipt" --logger "console;verbosity=normal"
 dotnet test --filter "Name~QR_R03"                                      # one scenario
 ```
 
-Each QR-R test submits a collection and a disposal ticket, except QR-R03 (two collections, one disposal) and QR-R04 (a collection only). They haven't been timed yet.
+Each QR-R test submits a collection and a disposal ticket, except QR-R03 (two collections, one disposal) and QR-R04 (a collection only). First run (2026-11-11): R01 5 min, R03 6 min and R04 3.5 min on Node 2 (about 14 minutes); R02 6 min, R05 4.5 min and R06 4.5 min on Node 3 (about 15 minutes).
 
 The QR-B tests take about **12 minutes** per node. Each QR-D test submits a collection and a disposal ticket: QR-D01…D03 took about **3.5 minutes** on Node 2, and the other QR-D tests haven't been timed yet (QR-D09 submits two collection tickets, so it takes longer).
 

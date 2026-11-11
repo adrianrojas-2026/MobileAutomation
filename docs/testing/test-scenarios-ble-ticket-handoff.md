@@ -133,7 +133,7 @@ Expected texts are the Driver App's on `feature/10082-nearby-r1` (`qr-code/recei
 | **QR-R05** | **Collection QR after its receipt** | R01 → the same collection QR with *Scan QR Code* | Alert *Possible Duplicate Load* (*Receipts are already saved for this load.*); no current load afterwards | Send Data after Send Receipt | Node3 |
 | **QR-R06** | **Receipt from the Receipts tab** | S2 → S4 → disposal → Receipts tab → header QR icon | Same receipt checks as QR-R01 | Get Receipt | Node3 |
 
-Run: `dotnet test --filter Category=QR-Receipt`. QR-R02 needs `RunMode=Mobile` (it restarts the Driver App). Not timed yet.
+Run: `dotnet test --filter Category=QR-Receipt`. QR-R02 needs `RunMode=Mobile` (it restarts the Driver App). First run (2026-11-11): R01, R02, R03, R04 and R06 passed; R05 failed only on how the test read the alert (title and sub-title *Load &lt;n&gt;* came as one text), fixed to check both. About 14 minutes on Node 2 and 15 on Node 3. The receipt QR-R01 recorded has 12 fields: Receipt Identifier, Truck Number, Debris Type, Capacity, Load Call, Debris Volume, Loading Datetime, Disposal Datetime, Disposal Site, Client, Disaster, Contractor.
 
 ---
 
