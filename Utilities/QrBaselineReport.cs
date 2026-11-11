@@ -42,6 +42,17 @@ public static class QrBaselineReport
         ["QR-B09"] = new("QR handoff with both devices in airplane mode", "Demo env", "TC-29"),
         ["QR-B10"] = new("Device Bluetooth readiness", "Risk: BLE support", "Lanes E / D"),
         ["QR-B11"] = new("Second ticket while the abandon prompt is open", "FR-6 (defect)", "BLE abandon race"),
+        // Disposal leg (QrDisposalBaselineTests): the expected results for R2 Receive Data and Send Receipt
+        ["QR-D01"] = new("Driver load QR payload fingerprint, imported by the disposal form", "FR-4, R2 Consumer Shared Data", "Receive Data"),
+        ["QR-D02"] = new("Disposal QR payload fingerprint (≤ 4,200 chars)", "FR-4, R2 Receipt Data", "Send Receipt"),
+        ["QR-D03"] = new("Disposal QR reopens from the submitted card with the same payload", "FR-7, R2 Receipt Data", "Send Receipt fallback"),
+        ["QR-D04"] = new("Driver receipt after a disposal QR scan", "FR-6, R2 Receipt Data", "Send Receipt"),
+        ["QR-D05"] = new("Receipt stored after a restart; whether it ends the load", "FR-6, R2 Receipt Data", "Send Receipt"),
+        ["QR-D06"] = new("Same disposal QR scanned twice", "FR-7, R2 Receipt Data", "Send Receipt re-send"),
+        ["QR-D07"] = new("Disposal import of a non-load or damaged load QR", "FR-5, Check 3", "Receive Data"),
+        ["QR-D08"] = new("Receipt scan of a non-receipt or damaged disposal QR", "FR-5, Check 3", "Send Receipt"),
+        ["QR-D09"] = new("Disposal QR of another load scanned by the driver", "FR-6, R2 Receipt Data", "Send Receipt to the wrong Driver App"),
+        ["QR-D10"] = new("Disposal and receipt with both devices in airplane mode", "Demo env", "Receive Data / Send Receipt offline"),
         // Part B: the BLE handoff itself; the last column names the QR baseline it is compared with
         ["TC-12"] = new("BLE happy path: ticket sent via Bluetooth becomes the Driver's current load", "FR-6, Check 2", "QR-B02"),
         ["TC-13"] = new("BLE payload parity: received load carries the ticket's QR payload unchanged", "FR-4, FR-6", "QR-B01")
@@ -118,11 +129,12 @@ public static class QrBaselineReport
             DateTime.Now));
     }
 
-    // QR_B01_B08_... -> QR-B01, QR-B08; BLE_TC12_TC13_... -> TC-12, TC-13; the original QR E2E is QR-A01
+    // QR_B01_B08_... -> QR-B01, QR-B08; QR_D04_D05_... -> QR-D04, QR-D05; BLE_TC12_TC13_... -> TC-12, TC-13;
+    // the original QR E2E is QR-A01
     private static IReadOnlyList<string> ScenarioIdsOf(string methodName)
     {
         if (methodName.StartsWith("Test_LoadDisposalCollectionFlow", StringComparison.Ordinal)) return ["QR-A01"];
-        var qr = Regex.Match(methodName, @"^QR_((?:[AB]\d{2}_)+)");
+        var qr = Regex.Match(methodName, @"^QR_((?:[ABD]\d{2}_)+)");
         if (qr.Success) return qr.Groups[1].Value.Split('_', StringSplitOptions.RemoveEmptyEntries).Select(id => $"QR-{id}").ToList();
         var ble = Regex.Match(methodName, @"^BLE_((?:TC\d{2}_)+)");
         return ble.Success

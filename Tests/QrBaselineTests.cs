@@ -18,21 +18,12 @@ namespace RecoveryTrac.AutomatedTests
     [Category("QR")]
     [Category("QR-Baseline")]
     [Parallelizable(ParallelScope.Self)]
-    public abstract class QrBaselineTests : DualAppTestBase
+    public abstract class QrBaselineTests : QrBaselineTestBase
     {
-        // Largest payload the BLE transfer logic must carry (FR-4)
-        private const int MaxBlePayloadChars = 4200;
-
-        private readonly string _node;
-
         protected QrBaselineTests(string node)
+            : base(node)
         {
-            _node = node;
         }
-
-        protected override string NodeForCurrentTest => _node;
-
-        private record SubmittedTicket(CollectionLoadTicketFlow Flow, CollectionTicketDraft Draft, string TicketId, byte[] QrPng, string QrText);
 
         private record DriverSnapshot(string CurrentLoad, string LoadQrText, string LoadQrSha256);
 
@@ -213,11 +204,7 @@ namespace RecoveryTrac.AutomatedTests
             var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
             if (driverApp is not AndroidDriver) Assert.Ignore("Staging arbitrary QR text needs a device (RunMode=Mobile).");
 
-            var variants = new Dictionary<string, string>
-            {
-                ["truncated-half"] = ticket.QrText[..(ticket.QrText.Length / 2)],
-                ["one-char-altered"] = AlterOneCharacter(ticket.QrText)
-            };
+            var variants = DamagedVariants(ticket.QrText);
 
             var results = new Dictionary<string, ScanObservation>();
             foreach (var (name, payload) in variants)
@@ -404,46 +391,10 @@ namespace RecoveryTrac.AutomatedTests
             return (alert, driverHome.HasActiveLoad);
         }
 
-        // Logs in on the first call, then fills, submits and syncs a ticket and decodes its QR
-        private SubmittedTicket SubmitTicket(string testName, CollectionLoadTicketFlow? loggedInFlow = null)
-        {
-            var flow = loggedInFlow;
-            if (flow == null)
-            {
-                flow = new CollectionLoadTicketFlow(DriverFactory.DriverFlex, _wait.Value!, _node);
-                flow.LoginAndEnterWebView();
-            }
-
-            var draft = flow.FillAndSubmitTicket(Notes(testName));
-            byte[] qrPng = flow.GenerateAndStoreQr();
-            string ticketId = flow.VerifyTicketSubmittedAndSynced(draft);
-            string qrText = QrScanFeed.Decode(qrPng, DriverFactory.DriverFlex);
-            Console.WriteLine($"🔳 Ticket {ticketId} QR payload: {qrText.Length} characters.");
-            return new SubmittedTicket(flow, draft, ticketId, qrPng, qrText);
-        }
-
         private static DriverSnapshot Snapshot(DriverHomePage driverHome)
         {
             string loadQrText = QrScanFeed.Decode(driverHome.GetCurrentLoadQrPng(), DriverFactory.DriverFlex);
             return new DriverSnapshot(driverHome.CurrentLoad, loadQrText, BaselineRecorder.Sha256(loadQrText));
-        }
-
-        // The QR_Bxx_... test running the scenario, for the ticket notes
-        private static string TestName => TestContext.CurrentContext.Test.MethodName!;
-
-        private string Notes(string testName) => $"Automated test - {testName} {_node} {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
-
-        // Changes the first letter or digit from the middle of the payload onwards to a different one of the same kind
-        private static string AlterOneCharacter(string payload)
-        {
-            int index = Enumerable.Range(payload.Length / 2, payload.Length - payload.Length / 2)
-                .Concat(Enumerable.Range(0, payload.Length / 2))
-                .First(i => char.IsAsciiLetterOrDigit(payload[i]));
-            char c = payload[index];
-            char altered = char.IsAsciiDigit(c) ? (char)('0' + (c - '0' + 1) % 10)
-                : char.IsAsciiLetterUpper(c) ? (char)('A' + (c - 'A' + 1) % 26)
-                : (char)('a' + (c - 'a' + 1) % 26);
-            return string.Concat(payload.AsSpan(0, index), altered.ToString(), payload.AsSpan(index + 1));
         }
     }
 

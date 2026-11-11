@@ -20,6 +20,9 @@ public class DriverReceiptPage : BasePage
     private static By DetailValue(string caption) => By.XPath(
         $"//*[{Upper("normalize-space(text())")}='{caption.ToUpperInvariant()}']/following-sibling::*[normalize-space()][1]");
 
+    // Whether the app is on a receipt right now (no wait)
+    public bool IsShown => new Uri(Driver.Url).AbsolutePath.StartsWith(ReceiptRoute, StringComparison.OrdinalIgnoreCase);
+
     // Waits for the scanner to hand over to the receipt and returns its identifier (e.g. RQTE-LC-100N.A)
     public string WaitForReceipt(int timeoutSeconds = 60)
     {
