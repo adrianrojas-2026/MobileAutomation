@@ -53,6 +53,13 @@ public static class QrBaselineReport
         ["QR-D08"] = new("Receipt scan of a non-receipt or damaged disposal QR", "FR-5, Check 3", "Send Receipt"),
         ["QR-D09"] = new("Disposal QR of another load scanned by the driver", "FR-6, R2 Receipt Data", "Send Receipt to the wrong Driver App"),
         ["QR-D10"] = new("Disposal and receipt with both devices in airplane mode", "Demo env", "Receive Data / Send Receipt offline"),
+        // Receipt regression (QrReceiptRegressionTests): getting a receipt over QR keeps working as it does today
+        ["QR-R01"] = new("Receipt from Home: saved, its fields, the load ended", "Get Receipt, R2 Receipt Data", "Send Receipt (expected receipt)"),
+        ["QR-R02"] = new("Receipts tab after a restart: listed, searched, reopened", "Get Receipt", "Send Receipt"),
+        ["QR-R03"] = new("Same disposal QR for the next load is a duplicate receipt", "Get Receipt", "Send Receipt re-send"),
+        ["QR-R04"] = new("Collection QR at Scan Receipt Code is the wrong kind of code", "Get Receipt", "Send Receipt of a non-receipt"),
+        ["QR-R05"] = new("Collection QR after its receipt is flagged as a duplicate load", "Get Receipt", "Send Data after Send Receipt"),
+        ["QR-R06"] = new("Receipt from the Receipts tab's scan icon matches Home's", "Get Receipt", "Send Receipt"),
         // Part B: the BLE handoff itself; the last column names the QR baseline it is compared with
         ["TC-12"] = new("BLE happy path: ticket sent via Bluetooth becomes the Driver's current load", "FR-6, Check 2", "QR-B02"),
         ["TC-13"] = new("BLE payload parity: received load carries the ticket's QR payload unchanged", "FR-4, FR-6", "QR-B01")
@@ -129,12 +136,12 @@ public static class QrBaselineReport
             DateTime.Now));
     }
 
-    // QR_B01_B08_... -> QR-B01, QR-B08; QR_D04_D05_... -> QR-D04, QR-D05; BLE_TC12_TC13_... -> TC-12, TC-13;
-    // the original QR E2E is QR-A01
+    // QR_B01_B08_... -> QR-B01, QR-B08; QR_D04_D05_... -> QR-D04, QR-D05; QR_R01_... -> QR-R01;
+    // BLE_TC12_TC13_... -> TC-12, TC-13; the original QR E2E is QR-A01
     private static IReadOnlyList<string> ScenarioIdsOf(string methodName)
     {
         if (methodName.StartsWith("Test_LoadDisposalCollectionFlow", StringComparison.Ordinal)) return ["QR-A01"];
-        var qr = Regex.Match(methodName, @"^QR_((?:[ABD]\d{2}_)+)");
+        var qr = Regex.Match(methodName, @"^QR_((?:[ABDR]\d{2}_)+)");
         if (qr.Success) return qr.Groups[1].Value.Split('_', StringSplitOptions.RemoveEmptyEntries).Select(id => $"QR-{id}").ToList();
         var ble = Regex.Match(methodName, @"^BLE_((?:TC\d{2}_)+)");
         return ble.Success

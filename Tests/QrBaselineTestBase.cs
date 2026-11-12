@@ -7,9 +7,10 @@ using OpenQA.Selenium;
 
 namespace RecoveryTrac.AutomatedTests
 {
-    // Shared by the collection QR baselines (QrBaselineTests, QR-Bxx) and the disposal QR baselines
-    // (QrDisposalBaselineTests, QR-Dxx): one node pair per fixture, a submitted collection ticket with its decoded QR,
-    // and the helpers that build damaged payloads
+    // Shared by the collection QR baselines (QrBaselineTests, QR-Bxx), the disposal QR baselines
+    // (QrDisposalBaselineTests, QR-Dxx) and the receipt regression tests (QrReceiptRegressionTests, QR-Rxx): one node
+    // pair per fixture, a submitted collection ticket with its decoded QR, the load on the Driver app and a submitted
+    // disposal for it, and the helpers that build damaged payloads
     public abstract class QrBaselineTestBase : DualAppTestBase
     {
         // Largest payload the BLE transfer logic must carry (FR-4)
@@ -52,11 +53,48 @@ namespace RecoveryTrac.AutomatedTests
             return driverHome.WaitForActiveLoad();
         }
 
+        // A collection ticket that is the Driver app's current load, with the load QR the disposal site scans
+        protected record LoadOnDriver(SubmittedTicket Ticket, IWebDriver DriverApp, DriverHomePage DriverHome, string Load, byte[] LoadQrPng, string LoadQrText);
+
+        // Submits a collection ticket, starts the Driver app and scans the ticket's QR, returning the load and its QR
+        protected LoadOnDriver CollectAndScan(string testName)
+        {
+            var ticket = SubmitTicket(testName);
+            var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
+            string load = ScanCollectionQr(driverApp, driverHome, ticket.QrPng);
+            Console.WriteLine($"🚚 Driver app current load: {load}");
+
+            byte[] loadQrPng = driverHome.GetCurrentLoadQrPng();
+            string loadQrText = QrScanFeed.Decode(loadQrPng, DriverFactory.DriverFlex);
+            Console.WriteLine($"🔳 Driver load {load} QR payload: {loadQrText.Length} characters.");
+            return new LoadOnDriver(ticket, driverApp, driverHome, load, loadQrPng, loadQrText);
+        }
+
+        // Steps 23-26 of the E2E: a Load - Disposal ticket for the load whose QR is given, submitted, with its QR
+        protected SubmittedDisposal SubmitDisposal(byte[] driversQrPng, SubmittedTicket collection,
+            LoadDisposalFlow? disposal = null, bool waitForSync = true)
+        {
+            disposal ??= new LoadDisposalFlow(DriverFactory.DriverFlex, _node);
+            string truckNumber = collection.Draft.Truck.TruckNumber;
+
+            disposal.StoreAndStageDriversQr(driversQrPng);
+            var ticketsBefore = disposal.OpenNewForm();
+            string site = disposal.ScanDriversQrAndSelectSite();
+            disposal.AssertImportedAndContinue(site, truckNumber);
+            disposal.CompleteLoadCallAndSubmit();
+            return disposal.VerifySubmittedAndGetQr(ticketsBefore, collection.TicketId, truckNumber, waitForSync);
+        }
+
+        // Receipts are numbered after their load: RQTE-LC-100N > RQTE-LC-100N.A (the Driver app's own rule when it
+        // matches a receipt to a load)
+        protected static bool IsReceiptOf(string receiptId, string load) =>
+            receiptId == load || receiptId.StartsWith(load + ".", StringComparison.OrdinalIgnoreCase);
+
         // Puts a QR code (collection or disposal) in front of the Driver app's scanner
         protected static void StageOnDriver(IWebDriver driverApp, byte[] qrPng) =>
             QrScanFeed.Stage(driverApp, qrPng, rasterizer: DriverFactory.DriverFlex, DriverFactory.DriverCameraFeedPath);
 
-        // The QR_Bxx_... / QR_Dxx_... test running the scenario, for the ticket notes
+        // The QR_Bxx_... / QR_Dxx_... / QR_Rxx_... test running the scenario, for the ticket notes
         protected static string TestName => TestContext.CurrentContext.Test.MethodName!;
 
         protected string Notes(string testName) => $"Automated test - {testName} {_node} {DateTime.Now:yyyy-MM-dd HH:mm:ss}";

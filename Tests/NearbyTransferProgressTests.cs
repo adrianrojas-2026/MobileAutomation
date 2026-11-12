@@ -16,10 +16,11 @@ namespace RecoveryTrac.AutomatedTests
     // A transfer between emulators takes about a second, so the menu is recorded from inside the WebView and checked
     // afterwards rather than polled. Each failure names its requirement ID.
     // Story 4.8 (NDT-10 progress view and Cancel) is in the Flex code as of 2026-11-10: a successful send closes the
-    // menu with the LDT-10 toast 'Data sent to …', a canceled one closes it with no toast. Kept in "BLE-R1-C2-Pending"
-    // until both pass against that build; then move it back to "BLE-R1-C2"
+    // menu with the LDT-10 toast 'Data sent to …', a canceled one closes it with no toast. Both tests passed against
+    // that build (Select 2026-11-10, Cancel 2026-11-11 with Cancel timed on 'Connecting…'), so they left
+    // "BLE-R1-C2-Pending" for "BLE-R1-C2". An APK built before 4.8 fails them with NDT-10 not met
     [TestFixture]
-    [Category("BLE-R1-C2-Pending")]
+    [Category("BLE-R1-C2")]
     [NonParallelizable]
     public class NearbyTransferProgressTests : NearbyTestBase
     {
@@ -120,9 +121,10 @@ namespace RecoveryTrac.AutomatedTests
             });
         }
 
-        // 10082-NDT-10-P08, N02, P09, P10, N03, E01: right after the Driver App is picked, a tap outside the menu and
-        // Escape (which must not dismiss or cancel it), then Cancel. A confirmed Cancel returns to the unchanged ticket and
-        // the Driver App gets no load; if the Driver App committed first, success must win
+        // 10082-NDT-10-P08, N02, P09, P10, N03, E01: once the Driver App is picked and the transfer shows as in progress
+        // (Connecting…), a tap outside the menu and Escape (which must not dismiss or cancel it), then Cancel 80 ms later,
+        // before Flex writes the data. A confirmed Cancel returns to the unchanged ticket and the Driver App gets no load
+        // (P10, N03); if the Driver App committed first anyway, success must win (E01)
         [Test]
         [Requirements("NDT-10-P08", "NDT-10-N02", "NDT-10-P09", "NDT-10-P10", "NDT-10-N03", "NDT-10-E01")]
         public void NDT10_CancelDuringTransfer_ReturnsToUnchangedTicket()
@@ -139,7 +141,7 @@ namespace RecoveryTrac.AutomatedTests
             // it with no toast (P10). The toast tells the two apart
             IonicToasts.StartRecording(DriverFactory.DriverFlex);
             menu.StartRecording();
-            Assert.That(menu.SelectThenDismissAndCancel(card.Key, dismissAfterMs: 150, cancelAfterMs: 500), Is.True,
+            Assert.That(menu.SelectThenDismissAndCancelWhileConnecting(card.Key), Is.True,
                 $"The Driver App card '{card.Key}' was gone before it could be selected.");
             Thread.Sleep(1000);
             bool closed = menu.WaitFor(s => !s.Open, 5) != null;
@@ -187,15 +189,15 @@ namespace RecoveryTrac.AutomatedTests
 
             if (!dismissedWhileInProgress)
             {
-                Assert.Warn($"10082-NDT-10-P08 / N02 not checked: the tap outside and Escape (150 ms after selecting) did not land in an in-progress state ({atDismiss}).");
+                Assert.Warn($"10082-NDT-10-P08 / N02 not checked: the tap outside and Escape did not land in an in-progress state ({atDismiss}).");
             }
             if (tCancel == null && atCancel?.Progress == null)
             {
-                Assert.Warn($"10082-NDT-10-P09 / P10 not checked: 500 ms after selecting there was no in-progress transfer to cancel ({atCancel}).");
+                Assert.Warn($"10082-NDT-10-P09 / P10 not checked: no in-progress transfer to cancel showed up after selecting ({atCancel}).");
             }
             if (tCancel != null && !flexCanceled && driverHasLoad)
             {
-                Assert.Warn("10082-NDT-10-P10 / N03 not checked: the Driver App committed the transfer before Cancel took effect (E01 checked instead).");
+                Assert.Warn($"10082-NDT-10-P10 / N03 not checked: the Driver App committed the transfer before Cancel took effect, which landed on '{atCancel?.Progress?.Text}' (E01 checked instead).");
             }
             Assert.Multiple(() =>
             {

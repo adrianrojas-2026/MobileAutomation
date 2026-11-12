@@ -81,6 +81,21 @@ The disposal scenarios:
 
 Each QR-B and QR-D fixture runs on Node 2 and Node 3 in parallel, logged in with that node's own Flex account; tests on the same node pair run one after the other. QR-B06, B07, B09, D07, D08 and D10 need Mobile mode (they stage arbitrary QR text or use airplane mode) and are ignored in Web mode. Helpers shared by both fixtures (submitting a ticket, damaged payload variants) are in `Tests/QrBaselineTestBase.cs`.
 
+## Receipt regression (QR-R)
+
+`Tests/QrReceiptRegressionTests.cs` (categories `QR`, `QR-Receipt`) checks that **getting a receipt on the Driver App over QR** keeps working as it does today. QR-D *records* the disposal leg; these tests *assert* it, so a Flex or Driver App change that breaks the receipt fails the run. Each test also saves what it saw under `Baselines/`. QR-R01's receipt, with every field, is the expected result for the BLE disposal E2E (R2 *Send Receipt*, not built yet): a receipt sent over Bluetooth must match it field for field.
+
+| ID | Checks | Node |
+|---|---|---|
+| QR-R01 | Receipt from Home's *Scan Receipt Code*:<br>• the toast *Receipt saved successfully.*<br>• the receipt opens under the load's number (`<load>.A`), dated now (device clock)<br>• Receipt Identifier, Truck Number, Debris Type, Capacity and Load Call match the tickets<br>• *Back* returns to Home, which shows **No Active Load** and *Scan QR Code* | Node 2 |
+| QR-R02 | Receipts tab after a restart:<br>• today's count is one higher and the card shows the receipt's number and date<br>• *Search by number* finds it<br>• a search with no match shows *No receipts found for &lt;today&gt;.* and *Clear Filters* brings the list back<br>• the card reopens the same receipt (same fields), and *Back* returns to the list | Node 3 |
+| QR-R03 | The same disposal QR scanned again for the driver's next load:<br>• no receipt opens<br>• *Receipt &lt;id&gt; has already been scanned.*<br>• the app goes back to Home, the next load stays current<br>• the receipt is listed once | Node 2 |
+| QR-R04 | A collection QR at *Scan Receipt Code*:<br>• *QR Code Type Mismatch: Please scan a receipt QR code.*<br>• the app goes back to Home, the load stays current, and *Scan Receipt Code* is still offered | Node 2 |
+| QR-R05 | The collection QR of a load that already has its receipt, scanned again with *Scan QR Code*:<br>• the *Possible Duplicate Load* alert, sub-titled *Load &lt;n&gt;* (*Receipts are already saved for this load.*)<br>• the load doesn't become current again | Node 3 |
+| QR-R06 | Receipt from the Receipts tab's QR icon while a load is active: the same checks as QR-R01's receipt | Node 3 |
+
+The expected texts come from the Driver App on `feature/10082-nearby-r1`. A build with the receipt / active-load validation (UI branch `feature/10722`) rejects a receipt for another load before checking for a duplicate, so QR-R03's message would change there. QR-R02 restarts the Driver App, so it needs Mobile mode. The receipt is read from the app's own page objects, `Pages/Driver/DriverReceiptPage.cs` (one receipt) and `Pages/Driver/DriverReceiptsPage.cs` (the Receipts tab).
+
 ## BLE ticket handoff (TC-12 / TC-13)
 
 `Tests/BleTicketHandoffTests.cs` → `BLE_TC12_TC13_CollectionTicket_SentViaBluetooth_IsLoadedOnDriver` (category `BLE`). This is Part B of `docs/testing/test-scenarios-ble-ticket-handoff.md`. The collection ticket goes from Flex to the Driver App **over Bluetooth instead of a QR scan**. The test runs only in Mobile mode; in Web mode it is skipped.
@@ -152,7 +167,9 @@ Details are in Part C of `docs/testing/test-scenarios-ble-ticket-handoff.md`.
 
 Category `BLE-R1-C2` covers Flex's side of the transfer: the discovery menu, the Driver App cards and the Bluetooth access gate. As in R1-C1, these tests check the **requirement**, and each failure names its requirement ID.
 
-**Pending: `BLE-R1-C2-Pending`.** The two NDT-10 tests (progress view and Cancel) are in their own category until they pass against a Flex build with **Story 4.8**. Story 4.8 has been in the Flex code since 2026-11-10: a successful send closes the menu with the toast *Data sent to …*, and a canceled one closes it with no toast. Older APKs still have the earlier send view (*Send via Bluetooth* title, *Connecting to &lt;code&gt;…* / *Sending…* with a progress bar, only a disabled *Close*), where these tests fail on purpose (each failure names its NDT-10 requirement). `Category=BLE-R1-C2` doesn't include them. Run them with `-Filter "Category=BLE-R1-C2-Pending"` on an APK rebuilt with 4.8 (`Run-Suite.ps1 -RebuildApks`); once both pass, move `NearbyTransferProgressTests` back to `BLE-R1-C2`.
+**NDT-10 needs Story 4.8 in the Flex APK.** The two NDT-10 tests (progress view and Cancel) were in `BLE-R1-C2-Pending` until they passed against a Flex build with **Story 4.8** (in the Flex code since 2026-11-10: a successful send closes the menu with the toast *Data sent to …*, and a canceled one closes it with no toast). Both passed (Select on 2026-11-10, Cancel on 2026-11-11, with every NDT-10 requirement **Met**), so they're back in `BLE-R1-C2`. An APK built before 4.8 still has the earlier send view (*Send via Bluetooth* title, *Connecting to &lt;code&gt;…* / *Sending…* with a progress bar, only a disabled *Close*) and fails them with NDT-10 not met: rebuild the APKs (`Run-Suite.ps1 -RebuildApks`). A test category ending in `-Pending` still shows its unmet requirements as *Pending* in the Nearby report; none is in use now.
+
+**Cancel is timed on *Connecting…*.** Flex only stops a transfer when Cancel lands before the last data frame is written; after that the Driver App may already be saving, and its Ok wins (NDT-10-E01). A transfer between emulators takes about a second, so `NDT10_CancelDuringTransfer…` taps Cancel 80 ms after it first appears (`NearbyDriverMenuPage.SelectThenDismissAndCancelWhileConnecting`, timed inside the WebView). The earlier fixed 500 ms sometimes landed on *Sending data…*, leaving P10 and N03 *Not checked*. If that ever happens again, the test checks E01 instead and its warning names the state Cancel landed on.
 
 **Defects: `BLE-R1-C2-Defects`.** Tests for Driver App defects found during BLE testing. They fail until the defect is fixed, so `Category=BLE-R1-C2` doesn't include them. Run them with `-Filter "Category=BLE-R1-C2-Defects" -Nodes 2`.
 
@@ -160,8 +177,8 @@ Category `BLE-R1-C2` covers Flex's side of the transfer: the discovery menu, the
 |---|---|---|
 | `NearbyDiscoveryMenuTests.NDT2_NoDriverApp_NoResultsAfter10s_TryAgain_DismissStopsDiscovery` | NDT-2-P01, P02, E01, E02, E03, E05, P16, N04 | No Driver App nearby: searching starts at once, the no-results state appears after 10 s, Try Again starts a new 10-s attempt, and dismissing mid-search stops discovery and leaves the ticket as it was |
 | `NearbyDiscoveryMenuTests.NDT2_NDT3_DriverAppFound_ListedWhileDiscoveryContinues` | NDT-2-P03, E06, P04, N02, N01; NDT-3-P01, P03, P21, P12 | The Driver App's card shows under the running search and stays past 10 s while the search continues. It shows *Driver App*, its *Identity Code* and a distance, and disappears by itself once the Driver App closes |
-| `NearbyTransferProgressTests.NDT10_SelectDriverApp_StopsDiscovery_ShowsSendDataProgress` (**pending**) | NDT-2-P14, N04; NDT-10-P01, P02, P03, P04, P06, P07, N01 | Picking the Driver App stops discovery. The same menu then shows *Send Data*, *Connecting…* and *Sending data…* with a spinner and Cancel, and no percentage |
-| `NearbyTransferProgressTests.NDT10_CancelDuringTransfer_ReturnsToUnchangedTicket` (**pending**) | NDT-10-P08, N02, P09, P10, N03, E01 | A tap outside and Escape don't dismiss the menu. Cancel returns to the unchanged ticket with no load on the Driver App, or success wins if the Driver App committed first |
+| `NearbyTransferProgressTests.NDT10_SelectDriverApp_StopsDiscovery_ShowsSendDataProgress` | NDT-2-P14, N04; NDT-10-P01, P02, P03, P04, P06, P07, N01 | Picking the Driver App stops discovery. The same menu then shows *Send Data*, *Connecting…* and *Sending data…* with a spinner and Cancel, and no percentage |
+| `NearbyTransferProgressTests.NDT10_CancelDuringTransfer_ReturnsToUnchangedTicket` | NDT-10-P08, N02, P09, P10, N03, E01 | Once the transfer shows *Connecting…*: a tap outside and Escape don't dismiss the menu, then Cancel returns to the unchanged ticket with no load on the Driver App, or success wins if the Driver App committed first |
 | `NearbyReceiveDuringAbandonTests.NearbyLoad_ReceivedWhileAbandonPromptOpen_IsKeptAfterConfirm` (**defect**) | — (pending PO confirmation) | The Driver App holds load A, and the driver taps Cancel Load. While Confirm counts down, Flex sends load B, and the Driver App shows *Load B received.* Tapping Confirm must leave B as the active load, with the same payload as its QR. Today it removes B, and Home shows no load |
 | `QrBaselineNode3Tests.QR_B11_SecondTicketDuringAbandonPrompt_BehaviorIsRecorded` (QR counterpart) | — (QR-B11 baseline) | The same case over QR. With load A's abandon prompt open, a tap on *Scan Receipt Code* lands on the prompt's backdrop and closes the prompt, so no scan starts and load A stays. Confirm then removes A. Ticket B, scanned with *Scan QR Code*, becomes the load with its QR payload. With QR, no load can arrive behind the prompt |
 | `NearbyRuntimeAccessTests.NDT6_BluetoothOff_ShowsAccessFlow_ThenSearchesOnceOn` | NDT-6-P01, P02, P03, P08, N01, P09 | Bluetooth off: the Bluetooth Access flow appears instead of a search; once Bluetooth is on, the search starts without tapping the Nearby action again |
@@ -170,7 +187,7 @@ Category `BLE-R1-C2` covers Flex's side of the transfer: the discovery menu, the
 | `NearbySupportedClientsTests.NDT5_FlexWithoutNearby_KeepsQrAction_ShowsNoNearbyAction` | NDT-5-P05, P06, N01 | **`RunMode=Web` only** (ignored on devices): Flex Web shows no Nearby action, not even a disabled one, and its QR action still works |
 
 How they work:
-- **Texts, not tags.** The R1 menu isn't built yet, so `Pages/NearbyDriverMenuPage.cs` reads the top Flex overlay by the texts the requirements define. A recorder inside the WebView logs every change, so short states such as *Connecting…* are caught and timed.
+- **Texts, not tags.** The tests were written before the R1 menu existed, so `Pages/NearbyDriverMenuPage.cs` reads the top Flex overlay by the texts the requirements define, not by the app's tags. A recorder inside the WebView logs every change, so short states such as *Connecting…* are caught and timed.
 - **Scan state from Android.** "Discovery stopped" is also checked from Android's own record of Flex's Bluetooth scans (`BluetoothHelper.IsScanning`).
 - **Same Driver App setup as R1-C1.** The tests stop the grid Driver Apps and find this node's Driver App by difference. The Driver App uses the POC's *Receive via Bluetooth* while that button exists, so an R1-C1 gap doesn't hide the R1-C2 results.
 - **The device is put back.** The NDT-6 tests turn the Flex emulator's Bluetooth off or revoke its Nearby devices access, and restore both in `finally`.
@@ -184,6 +201,7 @@ Not automated in R1-C2: the alternative-action requirements, which wait on an op
 | Path | Contents |
 |---|---|
 | `Tests/` | Test fixtures (`BaseTest` closes the apps and sessions after each test) |
+| `Tests/DualAppTestBase.cs` | Base of every two-app fixture: starts Flex and the Driver App on the test's node pair with that node's Flex account, saves failure evidence from both apps, records each test for the reports |
 | `Tests/ReportSetUpFixture.cs` | Runs once after all tests and writes the final reports and `Reports/index.html` |
 | `Pages/` | Flex page objects (`LoginPage`, `PrivacyPolicyPage`, `HomePage`, `FormsPage`, `ClockInPage`, `CollectionLoadTicketFormPage`, `LoadDisposalFormPage`, ...). `ClockInPage` handles the *Not Clocked In* alert and Clock In modal that Forms > New can raise |
 | `Pages/FlexApp/FlexAppPage.cs`, `Pages/Driver/DriverAppPage.cs`, `Pages/MenuPage.cs` | Early page objects that no test uses (`MenuPage.cs` is empty) |
@@ -191,16 +209,19 @@ Not automated in R1-C2: the alternative-action requirements, which wait on an op
 | `Tests/NearbyTestBase.cs` | Shared setup for the #10082 Nearby fixtures: stops the grid Driver Apps, opens the Nearby menu, finds this node's Driver App |
 | `Pages/Driver/` | Driver App page objects (`DriverOnboardingPage`, `DriverHomePage`, `DriverReceiptPage`). `DriverHomePage` also covers the current load, its QR and toasts (and the POC's Receive via Bluetooth / truck code, used only while that button exists) |
 | `Flows/` | Steps shared by tests: `CollectionLoadTicketFlow` (Flex login → submitted collection ticket), `LoadDisposalFlow` (Flex disposal: import the Driver's load QR → submitted disposal ticket and its QR), `DriverAppFlow` (Driver App onto Home, restart) |
-| `Tests/QrBaselineTestBase.cs` | Shared by the QR-B and QR-D baseline fixtures: node pair, submitted collection ticket with its decoded QR, damaged payload variants |
+| `Tests/QrBaselineTestBase.cs` | Shared by the QR-B, QR-D and QR-R fixtures: node pair, submitted collection ticket with its decoded QR, the load on the Driver App and its submitted disposal, damaged payload variants |
+| `Pages/Driver/DriverReceiptPage.cs`, `DriverReceiptsPage.cs` | One receipt (number, date, every field, Back) and the Receipts tab (count, cards, search, empty state, scan icon) |
 | `Utilities/NearbyDevicesPermission.cs` | Resets, answers and checks Android's *Nearby devices* (Bluetooth) permission |
 | `Utilities/BluetoothHelper.cs` | A device's Bluetooth readiness (Android version, BLE hardware, adapter, app permissions), airplane mode and Bluetooth on/off through adb, and whether Flex is scanning (`IsScanning`) |
 | `Utilities/BaselineRecorder.cs` | Saves a run's measurements as JSON under `Baselines/` |
-| `Utilities/QrBaselineReport.cs` | QR baseline report: QR-B, QR-D, QR-B10 readiness and TC-12 / TC-13 results, their baselines and devices |
+| `Utilities/QrBaselineReport.cs` | QR baseline report: QR-B, QR-D, QR-R, QR-B10 readiness and TC-12 / TC-13 results, their baselines and devices |
 | `Utilities/NearbyR1Report.cs`, `RequirementsAttribute.cs`, `ReportIndex.cs` | Nearby R1 requirements report (from each test's `[Requirements(...)]`), and `Reports/index.html` linking all reports (see [Failure evidence and reports](#failure-evidence-and-reports)) |
 | `Drivers/DriverFactory.cs` | Starts the browsers (Web) or the Appium sessions (Mobile); forwards backend ports to the emulators |
 | `Utilities/FakeCameraFeed.cs` | Web: feeds an image (QR code) to the browser's fake camera |
 | `Utilities/QrScanFeed.cs` | Hands a QR code to an app's scanner (Web: fake camera; Mobile: see [How Mobile mode handles the camera](#how-mobile-mode-handles-the-camera)) |
 | `Utilities/AdbHelper.cs` | `adb` helpers: port forwarding and adding photos to the gallery |
+| `Utilities/IonicToasts.cs` | Reads Ionic toasts in Flex or the Driver App, recording each as it appears so a short-lived one isn't missed |
+| `Utilities/PermissionHelper.cs` | Answers Android's permission dialogs (camera, location "While using the app") and the 16 KB page-size warning on Android 16+ images |
 | `Setup/Start-MobileGrid.ps1` | Starts the six node emulators on their fixed ports, then checks each one's Android version and installed APK |
 | `Setup/Build-DebugApk.ps1` | Builds and installs the Flex / Driver debug APKs against the local backend; skips the build when the app's sources didn't change |
 | `Setup/Clear-EmulatorCache.ps1` | Frees disk space: Quick Boot snapshots and emulator temp files, optionally a factory reset (see [Freeing disk space](#freeing-disk-space)) |
@@ -333,7 +354,7 @@ Chrome (Flex) opens first. Edge (Driver App) opens once the collection QR code e
   Then, in each `%USERPROFILE%\.android\avd\<name>.avd\config.ini`, set `hw.camera.back=virtualscene`, `hw.gpu.mode=host` and `disk.dataPartition.size=10G`.
 - **Check:** `.\Setup\Start-MobileGrid.ps1` starts all six and shows each one's Android version. Until the apps are installed it reports them missing; `Run-Suite.ps1 -RebuildApks` installs them.
 
-Nodes 1 and 2 have passed full parallel runs in both Web and Mobile mode. Node 3 passed all 10 of its tests (E2E, its QR-B and QR-D fixtures, BLE TC-12/13 and QR-B10) on 2026-11-11 in about 44 minutes, Node 3 alone (`Run-Suite.ps1 -Nodes 3 -Filter "FullyQualifiedName~Node3|Category=BLE-Readiness"`). The NDT tests are fixed to Node 2 and can't run there.
+Nodes 1 and 2 have passed full parallel runs in both Web and Mobile mode. Node 3 passed all 10 of its tests at the time (E2E, its QR-B and QR-D fixtures, BLE TC-12/13 and QR-B10) on 2026-11-11 in about 44 minutes, Node 3 alone (`Run-Suite.ps1 -Nodes 3 -Filter "FullyQualifiedName~Node3|Category=BLE-Readiness"`). The same filter now also runs QR-R02, R05 and R06 (13 tests); those three passed the same day in a Node 2 + 3 run, R05 after a fix to how it reads the alert. The NDT tests are fixed to Node 2 and can't run there.
 
 - **Start the grid with the script.** It starts each emulator on its own port, so the serial always matches `appsettings.json`. (Started by hand, the serial depends on start order: the first emulator gets 5554.) It stops if a port is taken by the wrong AVD. Once the emulators have booted, it reports each serial's Android version and whether its APK is installed:
 
@@ -457,7 +478,17 @@ dotnet test --filter "Name~QR_D04_D05"                                          
 dotnet test --filter "Category=BLE-Readiness"                                              # QR-B10: adb only, every online device
 ```
 
-`Category=QR-Baseline` doesn't include QR-B10; run it with `Category=BLE-Readiness`. `Category=QR` runs the E2E and both QR baseline fixtures.
+`Category=QR-Baseline` doesn't include QR-B10; run it with `Category=BLE-Readiness`. `Category=QR` runs the E2E, both QR baseline fixtures and the receipt regression tests.
+
+**Receipt regression (QR-R)** on Node 2 and Node 3 in parallel:
+
+```powershell
+.\Setup\Run-Suite.ps1 -Filter "Category=QR-Receipt"                    # QR-R01…R06
+dotnet test --filter "Category=QR-Receipt" --logger "console;verbosity=normal"
+dotnet test --filter "Name~QR_R03"                                      # one scenario
+```
+
+Each QR-R test submits a collection and a disposal ticket, except QR-R03 (two collections, one disposal) and QR-R04 (a collection only). First run (2026-11-11): R01 5 min, R03 6 min and R04 3.5 min on Node 2 (about 14 minutes); R02 6 min, R05 4.5 min and R06 4.5 min on Node 3 (about 15 minutes).
 
 The QR-B tests take about **12 minutes** per node. Each QR-D test submits a collection and a disposal ticket: QR-D01…D03 took about **3.5 minutes** on Node 2, and the other QR-D tests haven't been timed yet (QR-D09 submits two collection tickets, so it takes longer).
 
@@ -624,7 +655,7 @@ The local-Aspire pipeline runs nightly on weekdays and by hand (parameters: filt
   | Report | Covers | Written |
   |---|---|---|
   | `NearbyR1Report_latest.html` | Feature #10082 R1: every NDT requirement with its status (**Met**, **Not met**, **Pending**, **Not checked**, **Not run**), the tests that check it and the finding that named it; test results, baselines, devices, failure screenshots | After a run with tests marked `[Requirements(...)]` |
-  | `QrBaselineReport_latest.html` | BLE POC Part A: QR-A01, QR-B01…B11, the disposal baselines QR-D01…D10 and TC-12 / TC-13, their requirement checks, baselines, devices | After a run with any of those tests |
+  | `QrBaselineReport_latest.html` | BLE POC Part A: QR-A01, QR-B01…B11, the disposal baselines QR-D01…D10, the receipt regression tests QR-R01…R06 and TC-12 / TC-13, their requirement checks, baselines, devices | After a run with any of those tests |
 
   The Nearby and QR reports each list only their own tests, and keep the latest result of each test across runs (`*_results.json` next to them), so running one category updates only its rows. To start from scratch, delete the `Reports` folder.
 - **A requirement's status in the Nearby report** comes from its tests' results: *Not met* when a result names it (`10082-NDT-2-P14 / N04 not met: …`), *Pending* when that happens in a `*-Pending` category, *Not checked* when a warning says so or the test failed before its checks (e.g. a device not responding), *Met* when the test ran and didn't report it. A new Nearby test needs `[Requirements("NDT-x-yyy", ...)]` with the IDs it checks; a control test gets `[Requirements]` with none.
@@ -661,6 +692,7 @@ The local-Aspire pipeline runs nightly on weekdays and by hand (parameters: filt
 | Flex shows *No nearby Driver Apps found.* when testing by hand | The Driver App must be open (foreground) and have Nearby devices access, see above |
 | `10082-NDT-1-… not met` | The Driver App wasn't found in that state. If `NDT1_Control_…` also fails, the search itself is broken: check that Flex's Nearby menu opens, that both emulators' Bluetooth is on, and that the Driver App has Nearby devices access |
 | `10082-NDT-2/3/5/6-… not met` | Flex doesn't meet that requirement in the installed build (e.g. NDT-5: Flex Web still shows the Bluetooth icon). A `Precondition not met: Flex did not list this node's Driver App` failure is different: the Driver App isn't advertising (check `NDT1_Control_…` and the Driver emulator's Bluetooth) |
-| `10082-NDT-10-… not met` (category `BLE-R1-C2-Pending`) | Expected with an APK built before Story 4.8 (in the Flex code since 2026-11-10): that send view has no *Send Data* title, no spinner states and no Cancel. Rebuild the APKs (`Run-Suite.ps1 -RebuildApks`); if it still fails on a 4.8 build, it's a real gap |
+| `10082-NDT-10-… not met` | Usually an APK built before Story 4.8 (in the Flex code since 2026-11-10): that send view has no *Send Data* title, no spinner states and no Cancel. Rebuild the APKs (`Run-Suite.ps1 -RebuildApks`); if it still fails on a 4.8 build, it's a real gap |
+| `10082-NDT-10-P10 / N03 not checked` (warning) | Cancel landed after the last data frame, so the Driver App committed first and only E01 could be checked. The warning names the state Cancel landed on; run the test again |
 | Flex emulator left with Bluetooth off | An NDT-6 test was killed before its `finally` ran. Turn it back on with `adb -s <udid> shell cmd bluetooth_manager enable` |
 | BLE: a fixture shows neither *Passed* nor *Failed* | The run passed every check but took over 5 s, so it ended with a warning. See `Baselines/BLE-TC12_<node>_*.json` |

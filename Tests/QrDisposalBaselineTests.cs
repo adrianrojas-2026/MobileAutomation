@@ -27,9 +27,6 @@ namespace RecoveryTrac.AutomatedTests
         {
         }
 
-        // A collection ticket that is the Driver app's current load, with the load QR the disposal site scans
-        private record LoadOnDriver(SubmittedTicket Ticket, IWebDriver DriverApp, DriverHomePage DriverHome, string Load, byte[] LoadQrPng, string LoadQrText);
-
         private record ReceiptSnapshot(string ReceiptId, string TruckNumber, string DebrisType, string Capacity, string LoadCall);
 
         // What a scan at Scan Receipt Code led to: a receipt, an alert, or nothing
@@ -403,10 +400,6 @@ namespace RecoveryTrac.AutomatedTests
                 $"Disposal {disposalB.TicketId} of load {loadB} became receipt {outcome.ReceiptId} of load {loadA}.");
         }
 
-        // Receipts are numbered after their load: RQTE-LC-100N > RQTE-LC-100N.A
-        private static bool IsReceiptOf(string receiptId, string load) =>
-            receiptId == load || receiptId.StartsWith(load + ".", StringComparison.OrdinalIgnoreCase);
-
         // QR-D10: disposal and receipt with both devices in airplane mode (disposal sites often have no signal). The
         // collection runs online; the disposal import, submit, disposal QR and receipt scan run offline, and the
         // disposal ticket must sync once back online. Debug builds still reach the local backend through adb reverse,
@@ -457,35 +450,6 @@ namespace RecoveryTrac.AutomatedTests
                 Assert.That(synced, Is.True,
                     $"Disposal ticket {submitted.TicketId}, submitted in airplane mode, did not reach 'Synced' once back online.");
             });
-        }
-
-        // Submits a collection ticket, starts the Driver app and scans the ticket's QR, returning the load and its QR
-        private LoadOnDriver CollectAndScan(string testName)
-        {
-            var ticket = SubmitTicket(testName);
-            var (driverApp, driverHome) = DriverAppFlow.StartOnHome();
-            string load = ScanCollectionQr(driverApp, driverHome, ticket.QrPng);
-            Console.WriteLine($"🚚 Driver app current load: {load}");
-
-            byte[] loadQrPng = driverHome.GetCurrentLoadQrPng();
-            string loadQrText = QrScanFeed.Decode(loadQrPng, DriverFactory.DriverFlex);
-            Console.WriteLine($"🔳 Driver load {load} QR payload: {loadQrText.Length} characters.");
-            return new LoadOnDriver(ticket, driverApp, driverHome, load, loadQrPng, loadQrText);
-        }
-
-        // Steps 23-26 of the E2E: a Load - Disposal ticket for the load whose QR is given, submitted, with its QR
-        private SubmittedDisposal SubmitDisposal(byte[] driversQrPng, SubmittedTicket collection,
-            LoadDisposalFlow? disposal = null, bool waitForSync = true)
-        {
-            disposal ??= new LoadDisposalFlow(DriverFactory.DriverFlex, _node);
-            string truckNumber = collection.Draft.Truck.TruckNumber;
-
-            disposal.StoreAndStageDriversQr(driversQrPng);
-            var ticketsBefore = disposal.OpenNewForm();
-            string site = disposal.ScanDriversQrAndSelectSite();
-            disposal.AssertImportedAndContinue(site, truckNumber);
-            disposal.CompleteLoadCallAndSubmit();
-            return disposal.VerifySubmittedAndGetQr(ticketsBefore, collection.TicketId, truckNumber, waitForSync);
         }
 
         // After a scan at Scan Receipt Code the app either opens a receipt, shows an alert, or does nothing; returns
